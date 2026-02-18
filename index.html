@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#000000" />
+    
+    <!-- 
+       NOTE: The Content-Security-Policy <meta> tag has been REMOVED.
+       Security is now handled globally by electron/main.js to allow
+       connections to the Python backend (port 8000).
+    -->
+
+    <meta
+      name="description"
+      content="Nexus Retail OS Desktop Application"
+    />
+    <link rel="apple-touch-icon" href="/logo192.png" />
+    <link rel="manifest" href="/manifest.json" />
+    <title>Nexus Retail OS</title>
+  </head>
+  <body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root"></div>
+    
+    <!-- CRITICAL: Vite entry point for React app -->
+    <script type="module" src="/src/index.jsx"></script>
+  </body>
+</html>

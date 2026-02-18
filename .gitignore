@@ -1,0 +1,49 @@
+# --- Node / Electron ---
+node_modules/
+build/
+dist/
+dist1/
+.DS_Store
+Thumbs.db
+
+# Ignore all build outputs
+dist/
+dist*/
+**/dist/
+**/dist*/
+win-unpacked/
+*.exe
+*.blockmap
+
+dist (Version 1)/
+dist (Version 1)/
+
+
+# --- Python ---
+python_server/venv/
+__pycache__/
+*.py[cod]
+*.spec
+
+# --- Environment & Secrets (VERY IMPORTANT) ---
+.env
+config.json
+
+# --- Database ---
+*.db
+*.sqlite
+*.sqlite3
+*.db-wal
+*.db-shm
+nexus.db
+
+# --- Logs ---
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+python_server/*.log
+
+# --- Testing ---
+.pytest_cache/
+.vscode/
+python_server/cachedir/

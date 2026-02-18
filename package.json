@@ -1,0 +1,138 @@
+{
+  "name": "nexus-retail-os",
+  "version": "0.1.0",
+  "license": "MIT",
+  "homepage": "./",
+  "private": true,
+  "description": "AI-Powered Retail Operating System",
+  "author": "Ashutosh Pathak",
+  "main": "electron/main.js",
+  "productName": "NexusRetailOS",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ashuxtim/Nexus-Retail-OS.git"
+  },
+  "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mui/icons-material": "^7.3.4",
+    "@mui/material": "^7.3.4",
+    "@mui/x-charts": "^8.24.0",
+    "@mui/x-data-grid": "^8.11.3",
+    "@radix-ui/react-avatar": "^1.1.11",
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-dropdown-menu": "^2.1.16",
+    "@radix-ui/react-label": "^2.1.8",
+    "@radix-ui/react-scroll-area": "^1.2.10",
+    "@radix-ui/react-select": "^2.2.6",
+    "@radix-ui/react-separator": "^1.1.8",
+    "@radix-ui/react-slot": "^1.2.4",
+    "@radix-ui/react-switch": "^1.2.6",
+    "@radix-ui/react-tabs": "^1.1.13",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.8.0",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^13.5.0",
+    "better-sqlite3": "^9.4.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "electron-log": "^5.4.3",
+    "electron-updater": "^6.7.3",
+    "framer-motion": "^12.26.2",
+    "lru-cache": "^11.2.4",
+    "lucide-react": "^0.555.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.22.0",
+    "react-toastify": "^10.0.4",
+    "react-virtualized-auto-sizer": "^1.0.24",
+    "react-virtuoso": "^4.18.1",
+    "react-window": "^1.8.10",
+    "recharts": "^3.6.0",
+    "tailwind-merge": "^3.4.0",
+    "tailwindcss-animate": "^1.0.7",
+    "web-vitals": "^2.1.4"
+  },
+  "scripts": {
+    "start": "vite",
+    "build": "vite build",
+    "test": "echo 'Test script pending migration'",
+    "electron-dev": "concurrently \"npm start\" \"wait-on http://localhost:3000 && electron .\"",
+    "electron-pack": "npm run build && electron-builder"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "react-app/jest"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.57.0",
+    "@vitejs/plugin-react": "^5.1.2",
+    "autoprefixer": "^10.4.17",
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
+    "electron": "^28.2.0",
+    "electron-builder": "^24.9.1",
+    "electron-playwright-helpers": "^2.1.0",
+    "electron-rebuild": "^3.2.9",
+    "postcss": "^8.4.35",
+    "tailwindcss": "^3.4.1",
+    "vite": "^7.3.1",
+    "vite-plugin-env-compatible": "^2.0.1",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "extends": null,
+    "productName": "NexusRetailOS",
+    "appId": "com.nexusretail.os",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "ashuxtim",
+        "repo": "Nexus-Retail-OS"
+      }
+    ],
+    "directories": {
+      "buildResources": "assets"
+    },
+    "files": [
+      "build/**/*",
+      "electron/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "python_server/config/schema_migrations",
+        "to": "migrations"
+      },
+      {
+        "from": "python_server/dist/NexusBackend",
+        "to": "backend"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "public/favicon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    }
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-linux-x64-gnu": "^4.56.0"
+  }
+}

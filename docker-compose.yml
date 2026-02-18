@@ -1,0 +1,15 @@
+services:
+  analytics-engine:
+    build: 
+      context: ./python_server
+      dockerfile: ../Dockerfile.analytics
+    ports:
+      - "5000:5000"
+    volumes:
+      # Map the python_server folder to /analytics inside the container
+      - ./python_server:/analytics
+      # Mount the Electron AppData folder
+      - /mnt/c/Users/ashux/AppData/Roaming/NexusRetailOS:/analytics/data
+    environment:
+      - DATABASE_PATH=/analytics/data/nexus.db
+      - DEBUG=True
