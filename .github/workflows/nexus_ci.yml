@@ -1,0 +1,93 @@
+name: Nexus Retail OS - Quality & Safety Check
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  # ======================================================
+  # JOB 1: BACKEND HYGIENE (Formatting & Syntax)
+  # ======================================================
+  backend-quality:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./python_server
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+        cache: 'pip'
+
+    - name: Install Dependencies
+      run: |
+        pip install -r requirements.txt
+        pip install black flake8
+
+    - name: Check Code Formatting (Black)
+      run: black . --check
+
+    - name: Check Syntax Errors (Flake8)
+      run: flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+
+  # ======================================================
+  # JOB 2: FRONTEND BUILD (React Check)
+  # ======================================================
+  frontend-build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+
+    - name: Install Dependencies
+      run: npm ci
+
+    - name: Verify Build
+      run: npm run build
+
+  # ======================================================
+  # JOB 3: THE SIMULATION (Your Safety Net)
+  # ======================================================
+  simulation-check:
+    runs-on: ubuntu-latest
+    needs: [backend-quality]
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install Python Libs
+      # Install libs from the python_server folder where requirements.txt is
+      run: pip install -r python_server/requirements.txt
+
+    - name: 1. Run History Seed (Base DB)
+      # Creates the database in a temp folder using the correct path
+      run: |
+        python python_server/scripts/seed_database.py
+      env:
+        # Mock APPDATA so the script writes to a temp folder GitHub can access
+        APPDATA: ${{ runner.temp }} 
+
+    - name: 2. Run Daily Simulation (The Delta)
+      # Runs the daily update on top of that temp database
+      run: |
+        python python_server/scripts/daily_seed.py
+      env:
+        # Must match the APPDATA above so it finds the same DB file
+        APPDATA: ${{ runner.temp }}
