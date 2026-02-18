@@ -209,7 +209,6 @@ def run_daily_model_validation():
 
 def run_analytics_pipeline():
     """Runs heavy math in background thread and updates memory/disk."""
-    global ANALYTICS_CACHE
     if not analytics_engine:
         return
 
