@@ -127,7 +127,10 @@ class StockoutPredictor:
         now = tz_now()
         for f in self.cache_dir.glob("sim_v*.json"):
             try:
-                if now - datetime.fromtimestamp(f.stat().st_mtime, tz=now.tzinfo) > self.ttl:
+                if (
+                    now - datetime.fromtimestamp(f.stat().st_mtime, tz=now.tzinfo)
+                    > self.ttl
+                ):
                     f.unlink()
                     count += 1
             except:
@@ -169,7 +172,9 @@ class StockoutPredictor:
         total = len(products)
         progress_interval = max(1, total // 4)  # Log every 25%
 
-        logger.info(f"Stockout simulation started: {total} products, {self.config.get('n_simulations', 10000)} iterations each")
+        logger.info(
+            f"Stockout simulation started: {total} products, {self.config.get('n_simulations', 10000)} iterations each"
+        )
 
         for idx, (_, product) in enumerate(products.iterrows(), 1):
             try:

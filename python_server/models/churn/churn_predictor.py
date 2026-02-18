@@ -249,9 +249,7 @@ class ChurnPredictor:
                             with self._retrain_lock:
                                 self._retrain_in_progress = False
 
-                    threading.Thread(
-                        target=_background_retrain, daemon=True
-                    ).start()
+                    threading.Thread(target=_background_retrain, daemon=True).start()
 
             return False
         # ---------------------------

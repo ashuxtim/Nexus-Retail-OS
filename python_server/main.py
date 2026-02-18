@@ -194,11 +194,11 @@ def clean_number(val):
 def run_daily_model_validation():
     if not MODEL_VALIDATION_AVAILABLE:
         return
-    
+
     # Only run Forecast Validation here (Churn is handled by ensure_churn_model_trained)
     try:
         logger.info("📈 Running Daily Forecast Validation...")
-        evaluate_forecast_model() # Saves result to DB directly
+        evaluate_forecast_model()  # Saves result to DB directly
         logger.info("✅ Daily Forecast Validation Complete")
     except Exception as e:
         logger.error(f"Daily Forecast Validation Failed: {e}")
@@ -246,7 +246,11 @@ def ensure_churn_model_trained():
             ).fetchone()
             needs_training = True
             if result:
-                trained_at = result[0] if isinstance(result[0], datetime) else datetime.fromisoformat(result[0])
+                trained_at = (
+                    result[0]
+                    if isinstance(result[0], datetime)
+                    else datetime.fromisoformat(result[0])
+                )
                 if trained_at.tzinfo is None:
                     trained_at = trained_at.replace(tzinfo=tz_now().tzinfo)
                 if (tz_now() - trained_at).total_seconds() / 3600 < 24:
@@ -266,8 +270,7 @@ def initialize_ai():
     try:
         # 1. SQL Engine
         raw_engine = create_engine(
-            f"sqlite:///{DB_PATH}",
-            connect_args=sqlite_connect_args()
+            f"sqlite:///{DB_PATH}", connect_args=sqlite_connect_args()
         )
 
         @event.listens_for(raw_engine, "connect")
@@ -497,12 +500,14 @@ async def get_sales_forecast():
         if not raw_engine:
             return {"history": [], "forecast": [], "trend": "flat"}
         loop = asyncio.get_running_loop()
+
         def _forecast_sync():
             forecaster = RevenueForecaster(raw_engine, base_dir=BASE_DIR)
             data = forecaster.get_cached_forecast()
             if not data:
                 data = forecaster.generate_forecast()
             return data
+
         return await loop.run_in_executor(None, _forecast_sync)
     except Exception as e:
         logger.error(f"Forecast failed: {e}")
@@ -515,6 +520,7 @@ async def churn_analysis(limit: int = 50, risk_level: str = None):
         if not raw_engine:
             return {"success": False, "error": "Database not initialized"}
         loop = asyncio.get_running_loop()
+
         def _churn_sync():
             predictor = ChurnPredictor(raw_engine, base_dir=BASE_DIR)
             predictions = predictor.predict_all_customers()
@@ -527,6 +533,7 @@ async def churn_analysis(limit: int = 50, risk_level: str = None):
                 "data": predictions[:limit],
                 "model_info": predictor.get_model_info(),
             }
+
         return await loop.run_in_executor(None, _churn_sync)
     except Exception as e:
         logger.error(f"Churn analysis failed: {e}")
@@ -556,9 +563,11 @@ async def get_stockout_predictions(limit: int = 20, risk_level: Optional[str] = 
         if not raw_engine:
             return {"success": False, "error": "Database not initialized"}
         loop = asyncio.get_running_loop()
+
         def _stockout_sync():
             predictor = StockoutPredictor(
-                db_engine=raw_engine, config={"n_simulations": 10000, "forecast_days": 30}
+                db_engine=raw_engine,
+                config={"n_simulations": 10000, "forecast_days": 30},
             )
             predictions = predictor.predict_stockouts(limit=limit)
             if risk_level:
@@ -566,6 +575,7 @@ async def get_stockout_predictions(limit: int = 20, risk_level: Optional[str] = 
                     p for p in predictions if p["risk_level"] == risk_level.lower()
                 ]
             return {"success": True, "data": predictions, "count": len(predictions)}
+
         return await loop.run_in_executor(None, _stockout_sync)
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -577,12 +587,15 @@ async def get_critical_stockouts():
         if not raw_engine:
             return {"success": False, "error": "Database not initialized"}
         loop = asyncio.get_running_loop()
+
         def _critical_sync():
             predictor = StockoutPredictor(
-                db_engine=raw_engine, config={"n_simulations": 10000, "forecast_days": 30}
+                db_engine=raw_engine,
+                config={"n_simulations": 10000, "forecast_days": 30},
             )
             critical = predictor.get_critical_stockouts()
             return {"success": True, "data": critical, "count": len(critical)}
+
         return await loop.run_in_executor(None, _critical_sync)
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -594,9 +607,11 @@ async def get_single_prediction(variant_id: int):
         if not raw_engine:
             return {"success": False, "error": "Database not initialized"}
         loop = asyncio.get_running_loop()
+
         def _single_sync():
             predictor = StockoutPredictor(
-                db_engine=raw_engine, config={"n_simulations": 10000, "forecast_days": 30}
+                db_engine=raw_engine,
+                config={"n_simulations": 10000, "forecast_days": 30},
             )
             predictions = predictor.predict_stockouts(limit=500)
             for pred in predictions:
@@ -606,6 +621,7 @@ async def get_single_prediction(variant_id: int):
                 "success": False,
                 "error": f"No prediction available for variant {variant_id}.",
             }
+
         return await loop.run_in_executor(None, _single_sync)
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -670,33 +686,45 @@ async def get_model_health():
     try:
         if not raw_engine:
             return {"status": "error", "msg": "Database not initialized"}
-            
+
         manager = ModelManager(raw_engine)
-        
+
         # Get latest active models
         churn = manager.get_active_model("churn")
         forecast = manager.get_active_model("forecast")
-        
+
         report = {
             "timestamp": tz_now().isoformat(),
-            "churn_model": churn["metrics"] if churn else {"status": "pending", "msg": "No active model"},
-            "forecast_model": forecast["metrics"] if forecast else {"status": "pending", "msg": "Training/Validating..."}
+            "churn_model": (
+                churn["metrics"]
+                if churn
+                else {"status": "pending", "msg": "No active model"}
+            ),
+            "forecast_model": (
+                forecast["metrics"]
+                if forecast
+                else {"status": "pending", "msg": "Training/Validating..."}
+            ),
         }
-        
+
         # Inject metadata if available
         if churn:
-            report["churn_model"].update({
-                "model_id": churn.get("model_id"),
-                "trained_at": churn.get("trained_at"),
-                "version": churn.get("model_version")
-            })
-            
+            report["churn_model"].update(
+                {
+                    "model_id": churn.get("model_id"),
+                    "trained_at": churn.get("trained_at"),
+                    "version": churn.get("model_version"),
+                }
+            )
+
         if forecast:
-            report["forecast_model"].update({
-                "model_id": forecast.get("model_id"),
-                "trained_at": forecast.get("trained_at")
-            })
-            
+            report["forecast_model"].update(
+                {
+                    "model_id": forecast.get("model_id"),
+                    "trained_at": forecast.get("trained_at"),
+                }
+            )
+
         return report
     except Exception as e:
         logger.error(f"Health check failed: {e}")

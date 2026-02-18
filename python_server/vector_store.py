@@ -125,7 +125,9 @@ class SmartSearchEngine:
                 index = None
 
         # 2. FETCH DATA FROM DB
-        engine = create_engine(f"sqlite:///{self.db_path}", connect_args=sqlite_connect_args())
+        engine = create_engine(
+            f"sqlite:///{self.db_path}", connect_args=sqlite_connect_args()
+        )
         with engine.connect() as conn:
             if index is not None:
                 df = pd.read_sql(text(table_query), conn)

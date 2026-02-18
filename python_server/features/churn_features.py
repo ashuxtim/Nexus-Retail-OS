@@ -56,7 +56,9 @@ class ChurnFeatureEngineer:
         df["sale_date"] = pd.to_datetime(df["sale_date"])
 
         # Strip tz for pandas arithmetic — DB timestamps are tz-naive
-        anchor_naive = anchor_date.replace(tzinfo=None) if anchor_date.tzinfo else anchor_date
+        anchor_naive = (
+            anchor_date.replace(tzinfo=None) if anchor_date.tzinfo else anchor_date
+        )
 
         # === RECENCY, FREQUENCY, MONETARY ===
         rfm = (

@@ -87,6 +87,7 @@ def evaluate_churn_model():
         traceback.print_exc()
         return {"error": str(e)}
 
+
 def evaluate_forecast_model():
     """
     Validates the ACTIVE Prophet forecast model.
@@ -171,7 +172,7 @@ def evaluate_forecast_model():
         # 7. Register Validation Result in DB
         manager = ModelManager(ENGINE)
         model_id = f"forecast_prophet_{tz_now().strftime('%Y%m%d_%H%M%S')}"
-        
+
         manager.register_model(
             model_id=model_id,
             task_type="forecast",
@@ -180,7 +181,7 @@ def evaluate_forecast_model():
             file_path="internal://prophet/validation",  # Virtual path
             metrics=result,
             trained_rows=len(train),
-            is_active=True  # Make this the official health report for forecast
+            is_active=True,  # Make this the official health report for forecast
         )
 
         print(
