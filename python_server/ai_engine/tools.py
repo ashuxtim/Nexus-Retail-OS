@@ -41,6 +41,8 @@ def get_safe_match(conn, table, name_col, search_name):
     1. Try EXACT match (case insensitive).
     2. If not found, try LIKE match.
     3. If multiple found, ERROR out.
+    4. SIBLING CHECK: Even after finding a unique match, check if other records
+       share the same name prefix — prevents the LLM from resolving ambiguity silently.
     """
     # 1. Exact Match
     exact = conn.execute(
@@ -51,7 +53,17 @@ def get_safe_match(conn, table, name_col, search_name):
     ).fetchall()
 
     if len(exact) == 1:
-        return exact[0][0]  # Return ID
+        matched_id, matched_name = exact[0]
+        # Sibling check: are there others with a similar prefix?
+        siblings = _find_siblings(conn, table, name_col, matched_name, matched_id)
+        if siblings:
+            all_names = [matched_name] + [s[1] for s in siblings]
+            numbered = '\n'.join([f'  {i+1}. {n}' for i, n in enumerate(all_names)])
+            raise ValueError(
+                f"AMBIGUOUS — {len(all_names)} matching records found:\n{numbered}\nAsk the user which one they mean."
+            )
+        return matched_id
+
     if len(exact) > 1:
         names = ", ".join([r[1] for r in exact])
         raise ValueError(f"Ambiguous exact match. Found multiple: {names}")
@@ -68,17 +80,47 @@ def get_safe_match(conn, table, name_col, search_name):
         raise ValueError(f"No {table} found matching '{search_name}'")
 
     if len(fuzzy) > 1:
-        # Safety: If search is too short (e.g. "a"), reject it
         if len(search_name) < 3:
             raise ValueError(
                 f"Search '{search_name}' is too vague. Found {len(fuzzy)} matches."
             )
-
-        # List options
         names = ", ".join([r[1] for r in fuzzy[:5]])
-        raise ValueError(f"Ambiguous request. Did you mean: {names}?")
+        raise ValueError(f"Multiple matches found: {names}. Please specify which one.")
 
-    return fuzzy[0][0]  # Return ID
+    # Single fuzzy match — still do sibling check
+    matched_id, matched_name = fuzzy[0]
+    siblings = _find_siblings(conn, table, name_col, matched_name, matched_id)
+    if siblings:
+        all_names = [matched_name] + [s[1] for s in siblings]
+        numbered = '\n'.join([f'  {i+1}. {n}' for i, n in enumerate(all_names)])
+        raise ValueError(
+            f"AMBIGUOUS — {len(all_names)} matching records found:\n{numbered}\nAsk the user which one they mean."
+        )
+    return matched_id
+
+
+def _find_siblings(conn, table, name_col, matched_name, matched_id):
+    """
+    Check if other records share a common name prefix with the matched record.
+    E.g., 'Rahul Kumar Oraon' and 'Rahul Kumar Kol' share 'Rahul Kumar'.
+    """
+    words = matched_name.strip().split()
+    if len(words) < 2:
+        return []
+
+    # Build prefix from first N-1 words (e.g., "Rahul Kumar" from "Rahul Kumar Oraon")
+    prefix = " ".join(words[:-1])
+    if len(prefix) < 3:
+        return []
+
+    siblings = conn.execute(
+        text(
+            f"SELECT id, {name_col} FROM {table} WHERE LOWER({name_col}) LIKE LOWER(:prefix) AND id != :id"
+        ),
+        {"prefix": f"{prefix}%", "id": matched_id},
+    ).fetchall()
+    return siblings
+
 
 
 # --- SEARCH & ANALYTICS TOOLS ---
@@ -148,15 +190,25 @@ def get_market_insights_tool():
 
 @tool
 def add_customer_tool(name: str, mobile: str, address: str = ""):
-    """Adds a new customer."""
+    """Adds a new customer. Checks for name and mobile duplicates first."""
     try:
         with RAW_ENGINE.connect() as c:
-            # Check duplicates
-            exists = c.execute(
-                text("SELECT id FROM customer WHERE mobile = :mob"), {"mob": mobile}
+            # Check name duplicates (UNIQUE constraint on name)
+            name_exists = c.execute(
+                text("SELECT id, name FROM customer WHERE LOWER(name) = LOWER(:name)"),
+                {"name": name},
             ).fetchone()
-            if exists:
-                return f"❌ Customer with mobile {mobile} already exists."
+            if name_exists:
+                return f"❌ Customer '{name_exists[1]}' already exists."
+
+            # Check mobile duplicates
+            if mobile:
+                mob_exists = c.execute(
+                    text("SELECT id, name FROM customer WHERE mobile = :mob"),
+                    {"mob": mobile},
+                ).fetchone()
+                if mob_exists:
+                    return f"❌ Mobile {mobile} is already assigned to '{mob_exists[1]}'."
 
             c.execute(
                 text(
@@ -172,7 +224,7 @@ def add_customer_tool(name: str, mobile: str, address: str = ""):
 
 @tool
 def delete_customer_tool(name: str):
-    """Deletes a customer by name. Fails if ambiguous."""
+    """Deletes a customer by name. If the result contains 'AMBIGUOUS', you MUST show the full message to the user as-is (do NOT paraphrase it)."""
     try:
         with RAW_ENGINE.connect() as c:
             try:
@@ -230,7 +282,7 @@ def add_product_tool(
     price: str,
     initial_stock: str = "0",
 ):
-    """Adds a new product/variant."""
+    """Adds a new product/variant. Checks for duplicate variants."""
     try:
         price_val = clean_number(price)
         stock_val = clean_number(initial_stock)
@@ -241,6 +293,15 @@ def add_product_tool(
             ).fetchone()
             if pid_res:
                 prod_id = pid_res[0]
+                # Check if variant already exists under this product
+                var_exists = c.execute(
+                    text(
+                        "SELECT id FROM product_variant WHERE product_id = :pid AND LOWER(name) = LOWER(:vname)"
+                    ),
+                    {"pid": prod_id, "vname": variant_name},
+                ).fetchone()
+                if var_exists:
+                    return f"❌ Variant '{variant_name}' already exists under '{product_name}'."
             else:
                 prod_id = c.execute(
                     text("INSERT INTO product (name, category) VALUES (:name, :cat)"),
@@ -264,28 +325,56 @@ def add_product_tool(
         return f"❌ Error: {str(e)}"
 
 
+def get_safe_product_match(conn, product_name, variant_name=None):
+    """
+    Smart matching for products + variants with AMBIGUOUS disambiguation.
+    Returns (variant_id, product_display_name) or raises ValueError.
+    """
+    if variant_name:
+        res = conn.execute(
+            text(
+                "SELECT pv.id, p.name || ' - ' || pv.name FROM product_variant pv "
+                "JOIN product p ON pv.product_id = p.id "
+                "WHERE LOWER(p.name) LIKE LOWER(:pname) AND LOWER(pv.name) LIKE LOWER(:vname)"
+            ),
+            {"pname": f"%{product_name}%", "vname": f"%{variant_name}%"},
+        ).fetchall()
+    else:
+        res = conn.execute(
+            text(
+                "SELECT pv.id, p.name || ' - ' || pv.name FROM product_variant pv "
+                "JOIN product p ON pv.product_id = p.id "
+                "WHERE LOWER(p.name) LIKE LOWER(:pname)"
+            ),
+            {"pname": f"%{product_name}%"},
+        ).fetchall()
+
+    if not res:
+        raise ValueError(f"No product found matching '{product_name}'.")
+
+    if len(res) > 1:
+        numbered = '\n'.join([f'  {i+1}. {r[1]}' for i, r in enumerate(res[:10])])
+        raise ValueError(
+            f"AMBIGUOUS — {len(res)} matching products found:\n{numbered}\nAsk the user which one they mean."
+        )
+
+    return res[0][0], res[0][1]
+
+
 @tool
 def update_product_tool(
     product_name: str, variant_name: str, new_price: str = None, new_stock: str = None
 ):
-    """Updates price or stock."""
+    """Updates price or stock. If result contains 'AMBIGUOUS', show the full message to user as-is."""
     try:
         with RAW_ENGINE.connect() as c:
-            # Complex match: Joining tables. Safe Match helper is simpler, so we stick to manual here but added checks.
-            res = c.execute(
-                text(
-                    "SELECT pv.id FROM product_variant pv JOIN product p ON pv.product_id = p.id WHERE LOWER(p.name) LIKE LOWER(:pname) AND LOWER(pv.name) LIKE LOWER(:vname)"
-                ),
-                {"pname": f"%{product_name}%", "vname": f"%{variant_name}%"},
-            ).fetchall()
-
-            if not res:
-                return f"❌ Product variant not found."
-            if len(res) > 1:
-                return f"❌ Ambiguous product match."
+            try:
+                vid, display = get_safe_product_match(c, product_name, variant_name)
+            except ValueError as ve:
+                return f"❌ {str(ve)}"
 
             clauses = []
-            params = {"id": res[0][0]}
+            params = {"id": vid}
             if new_price is not None:
                 clauses.append("price = :price")
                 params["price"] = clean_number(new_price)
@@ -299,32 +388,26 @@ def update_product_tool(
                 params,
             )
             c.commit()
-        return f"✅ Updated {product_name}."
+        return f"✅ Updated {display}."
     except Exception as e:
         return f"❌ Error: {str(e)}"
 
 
 @tool
 def delete_product_tool(product_name: str, variant_name: str):
-    """Deletes a product variant."""
+    """Deletes a product variant. If result contains 'AMBIGUOUS', show the full message to user as-is."""
     try:
         with RAW_ENGINE.connect() as c:
-            res = c.execute(
-                text(
-                    "SELECT pv.id FROM product_variant pv JOIN product p ON pv.product_id = p.id WHERE LOWER(p.name) LIKE LOWER(:pname) AND LOWER(pv.name) LIKE LOWER(:vname)"
-                ),
-                {"pname": f"%{product_name}%", "vname": f"%{variant_name}%"},
-            ).fetchall()
-            if not res:
-                return "❌ Product not found."
-            if len(res) > 1:
-                return "❌ Ambiguous match."
+            try:
+                vid, display = get_safe_product_match(c, product_name, variant_name)
+            except ValueError as ve:
+                return f"❌ {str(ve)}"
 
             c.execute(
-                text("DELETE FROM product_variant WHERE id = :id"), {"id": res[0][0]}
+                text("DELETE FROM product_variant WHERE id = :id"), {"id": vid}
             )
             c.commit()
-        return f"✅ Deleted {product_name} - {variant_name}."
+        return f"✅ Deleted {display}."
     except Exception as e:
         return f"❌ Error: {str(e)}"
 
@@ -344,19 +427,24 @@ def record_sale_tool(customer_name: str, product_name: str, quantity: str):
             except ValueError as ve:
                 return f"❌ Customer Error: {str(ve)}"
 
-            # 2. Product Match (Optimized query)
+            # 2. Product Match (with ambiguity check)
             prod_res = c.execute(
                 text(
-                    "SELECT pv.id, pv.price, pv.current_stock, pv.name FROM product_variant pv JOIN product p ON pv.product_id = p.id WHERE LOWER(p.name) LIKE LOWER(:name) LIMIT 1"
+                    "SELECT pv.id, pv.price, pv.current_stock, p.name || ' - ' || pv.name "
+                    "FROM product_variant pv JOIN product p ON pv.product_id = p.id "
+                    "WHERE LOWER(p.name) LIKE LOWER(:name)"
                 ),
                 {"name": f"%{product_name}%"},
-            ).fetchone()
+            ).fetchall()
             if not prod_res:
                 return f"❌ Product '{product_name}' not found."
+            if len(prod_res) > 1:
+                numbered = '\n'.join([f'  {i+1}. {r[3]}' for i, r in enumerate(prod_res[:10])])
+                return f"❌ AMBIGUOUS — {len(prod_res)} matching products found:\n{numbered}\nAsk the user which one they mean."
 
-            vid, price, stock, vname = prod_res
+            vid, price, stock, display = prod_res[0]
             if stock < qty_val:
-                return f"❌ Insufficient stock ({stock})."
+                return f"❌ Insufficient stock for {display} ({stock})."
 
             sid = c.execute(
                 text(
@@ -437,15 +525,10 @@ def record_purchase_tool(
             except ValueError as ve:
                 return f"❌ Supplier Error: {str(ve)}"
 
-            prod_res = c.execute(
-                text(
-                    "SELECT pv.id FROM product_variant pv JOIN product p ON pv.product_id = p.id WHERE LOWER(p.name) LIKE LOWER(:name) LIMIT 1"
-                ),
-                {"name": f"%{product_name}%"},
-            ).fetchone()
-            if not prod_res:
-                return "❌ Product not found."
-            vid = prod_res[0]
+            try:
+                vid, _ = get_safe_product_match(c, product_name)
+            except ValueError as ve:
+                return f"❌ Product Error: {str(ve)}"
 
             c.execute(
                 text(

@@ -40,6 +40,7 @@ import io
 import json
 import base64
 import re
+from langchain_core.callbacks import BaseCallbackHandler
 import asyncio
 import uvicorn
 import threading
@@ -47,6 +48,7 @@ from datetime import datetime, timedelta
 from typing import List, Optional
 
 from core.time_utils import now as tz_now, sqlite_connect_args
+from core.key_store import save_keys as save_encrypted_keys, load_keys as load_encrypted_keys
 
 # FastAPI & Core
 from fastapi import FastAPI, UploadFile, File, BackgroundTasks
@@ -146,18 +148,29 @@ ANALYTICS_CACHE = {
 
 def load_settings():
     """
-    Load settings from environment variables (injected by Electron on startup).
-    Fallback to config.json for non-sensitive settings only.
+    Load settings with priority:
+      1. Environment variables (set by POST /settings or Electron injection)
+      2. Encrypted key file (persists across restarts/reloads)
+      3. config.json (non-sensitive settings only)
     """
     config = {}
 
-    # 1. Check environment variables FIRST (injected by Electron)
+    # 1. Check environment variables FIRST (injected by Electron or POST /settings)
     if "GROQ_API_KEY" in os.environ:
         config["GROQ_API_KEY"] = os.environ["GROQ_API_KEY"]
     if "GOOGLE_API_KEY" in os.environ:
         config["GOOGLE_API_KEY"] = os.environ["GOOGLE_API_KEY"]
 
-    # 2. Load non-sensitive settings from disk (if exists)
+    # 2. Fallback: Load from encrypted key file (survives process restarts)
+    if "GROQ_API_KEY" not in config or "GOOGLE_API_KEY" not in config:
+        stored_keys = load_encrypted_keys(BASE_DIR)
+        for key_name in ["GROQ_API_KEY", "GOOGLE_API_KEY"]:
+            if key_name not in config and key_name in stored_keys:
+                config[key_name] = stored_keys[key_name]
+                # Also inject into env so subsequent calls don't need disk I/O
+                os.environ[key_name] = stored_keys[key_name]
+
+    # 3. Load non-sensitive settings from config.json (if exists)
     if os.path.exists(CONFIG_PATH):
         try:
             with open(CONFIG_PATH, "r") as f:
@@ -264,7 +277,7 @@ def ensure_churn_model_trained():
 
 
 def initialize_ai():
-    global raw_engine, analytics_engine, search_engine, agent_executor, AI_INIT_FAILED
+    global raw_engine, analytics_engine, search_engine, agent_executor, safety_guard, AI_INIT_FAILED
 
     try:
         # 1. SQL Engine
@@ -363,6 +376,15 @@ async def update_settings(settings: SettingsModel, background_tasks: BackgroundT
         os.environ["GOOGLE_API_KEY"] = settings.google_api_key
         logger.info("✅ Google API Key received and loaded into memory")
 
+    # Persist keys to encrypted file (survives process restarts)
+    keys_to_save = {}
+    if settings.groq_api_key:
+        keys_to_save["GROQ_API_KEY"] = settings.groq_api_key
+    if settings.google_api_key:
+        keys_to_save["GOOGLE_API_KEY"] = settings.google_api_key
+    if keys_to_save:
+        save_encrypted_keys(keys_to_save, BASE_DIR)
+
     # Reinitialize AI with new keys
     background_tasks.add_task(initialize_ai)
 
@@ -415,11 +437,94 @@ async def transcribe_audio(file: UploadFile = File(...)):
     )
 
 
+AI_TIMEOUT = 30  # seconds
+
+
+class AmbiguityInterceptor(BaseCallbackHandler):
+    """
+    LangChain callback that captures tool outputs BEFORE the LLM gets a chance
+    to paraphrase them. If any tool returns an AMBIGUOUS message, we catch it
+    here and short-circuit — no extra LLM call needed.
+    """
+    def __init__(self):
+        self.ambiguous_output = None
+
+    def on_tool_end(self, output: str, **kwargs) -> None:
+        if "AMBIGUOUS" in str(output) and self.ambiguous_output is None:
+            self.ambiguous_output = str(output)
+
+
+async def _safe_agent_invoke(prompt):
+    """Invoke agent with timeout and rate-limit detection."""
+    interceptor = AmbiguityInterceptor()
+    try:
+        res = await asyncio.wait_for(
+            agent_executor.ainvoke(prompt, config={"callbacks": [interceptor]}),
+            timeout=AI_TIMEOUT
+        )
+
+        # Strip internal prefixes so original_action is the clean user intent
+        clean_action = prompt
+        for prefix in ["CONFIRMED by user. Execute this action NOW: ", "CONFIRMED: "]:
+            if clean_action.startswith(prefix):
+                clean_action = clean_action[len(prefix):]
+
+        # Check interceptor FIRST — catches AMBIGUOUS from raw tool output
+        # before the LLM paraphrases it into something like "The user needs to specify..."
+        if interceptor.ambiguous_output:
+            options = re.findall(r'\d+\.\s+(.+)', interceptor.ambiguous_output)
+            if options:
+                return {
+                    "type": "disambiguation",
+                    "message": "Multiple matches found. Which one did you mean?",
+                    "options": options,
+                    "original_action": clean_action,
+                }
+
+        output = str(res["output"])
+
+        # Fallback: LLM did forward AMBIGUOUS verbatim (respecting system prompt rule 2)
+        if "AMBIGUOUS" in output:
+            options = re.findall(r'\d+\.\s+(.+)', output)
+            if options:
+                return {
+                    "type": "disambiguation",
+                    "message": "Multiple matches found. Which one did you mean?",
+                    "options": options,
+                    "original_action": clean_action,
+                }
+
+        return {"answer": output}
+    except asyncio.TimeoutError:
+        return {"answer": "⏱️ Request timed out. The AI took too long — please try a simpler query.", "error_type": "timeout"}
+    except Exception as e:
+        # If the LLM crashed AFTER a tool returned AMBIGUOUS (e.g. "Failed to call a function"),
+        # the interceptor still has the raw output. Use it instead of returning generic error.
+        if interceptor.ambiguous_output:
+            options = re.findall(r'\d+\.\s+(.+)', interceptor.ambiguous_output)
+            if options:
+                clean_action = prompt
+                for prefix in ["CONFIRMED by user. Execute this action NOW: ", "CONFIRMED: "]:
+                    if clean_action.startswith(prefix):
+                        clean_action = clean_action[len(prefix):]
+                return {
+                    "type": "disambiguation",
+                    "message": "Multiple matches found. Which one did you mean?",
+                    "options": options,
+                    "original_action": clean_action,
+                }
+        err_str = str(e).lower()
+        if "rate_limit" in err_str or "429" in err_str or "rate limit" in err_str:
+            return {"answer": "⏳ API rate limit reached. Please wait about a minute before trying again.", "error_type": "rate_limit"}
+        logger.error(f"Agent invocation failed: {e}")
+        return {"answer": f"❌ Error: {str(e)}", "error_type": "error"}
+
+
 @app.post("/ask")
 async def ask_agent(q: AskRequest):
     """Delegate to Agent Executor & Safety Guard"""
     if not agent_executor or not safety_guard:
-        return {"answer": "AI not configured."}
+        return {"answer": "AI not configured. Please set your Groq API key in Settings.", "error_type": "not_configured"}
     user_text = q.text.strip()
 
     greetings = ["hi", "hello", "hey", "hola", "greetings", "test", "ping"]
@@ -428,17 +533,22 @@ async def ask_agent(q: AskRequest):
             "answer": "Hello! I am NexusRetail OS AI. Ask me about sales, inventory, or customers."
         }
 
+    # DISAMBIGUATION BYPASS: Messages from DisambiguationCard start with "CONFIRMED:"
+    # Route directly to agent — bypassing the safety guard keyword filter entirely.
+    # Without this, "CONFIRMED: delete rahul — specifically '...'" gets caught by the
+    # DANGER keyword scanner and loops into another YES/NO confirmation instead of executing.
+    if user_text.startswith("CONFIRMED:"):
+        # Extract the clean action text after "CONFIRMED: " prefix
+        action_text = user_text[len("CONFIRMED:"):].strip()
+        return await _safe_agent_invoke(f"CONFIRMED by user. Execute this action NOW: {action_text}")
+
     # 1. Check for Pending Confirmation (YES/NO) via Safety Guard
     confirm_status = safety_guard.check_confirmation(user_text)
 
     if confirm_status == "CONFIRM":
         action = safety_guard.get_pending()
         safety_guard.clear_pending()
-        try:
-            res = await agent_executor.ainvoke(action)
-            return {"answer": f"✅ Confirmed. {str(res['output'])}"}
-        except Exception as e:
-            return {"answer": f"❌ Execution failed: {str(e)}"}
+        return await _safe_agent_invoke(f"CONFIRMED by user. Execute this action NOW: {action}")
 
     elif confirm_status == "CANCEL":
         safety_guard.clear_pending()
@@ -446,7 +556,7 @@ async def ask_agent(q: AskRequest):
 
     elif confirm_status == "UNCLEAR" and safety_guard.get_pending():
         return {
-            "answer": f"⚠️ Please type 'YES' to confirm action: '{safety_guard.get_pending()}'."
+            "answer": f"⚠️ Please type **YES** to confirm or **NO** to cancel:\n\n\"{safety_guard.get_pending()}\""
         }
 
     # 2. New Request - Classify Intent
@@ -460,21 +570,24 @@ async def ask_agent(q: AskRequest):
 
     elif intent == "CHAT":
         try:
-            return {
-                "answer": safety_guard.llm.invoke(
-                    f"User: {user_text}. Reply helpfully."
-                ).content
-            }
+            result = await asyncio.wait_for(
+                asyncio.to_thread(
+                    lambda: safety_guard.llm.invoke(f"User: {user_text}. Reply helpfully.").content
+                ),
+                timeout=AI_TIMEOUT,
+            )
+            return {"answer": result}
+        except asyncio.TimeoutError:
+            return {"answer": "⏱️ Chat response timed out. Please try again.", "error_type": "timeout"}
         except Exception as e:
+            err_str = str(e).lower()
+            if "rate_limit" in err_str or "429" in err_str or "rate limit" in err_str:
+                return {"answer": "⏳ API rate limit reached. Please wait about a minute.", "error_type": "rate_limit"}
             logger.error(f"Chat fallback failed: {e}")
             return {"answer": "I'm online. Ask me about your data!"}
 
     else:  # QUERY / SAFE ACTION
-        try:
-            res = await agent_executor.ainvoke(user_text)
-            return {"answer": str(res["output"])}
-        except Exception as e:
-            return {"answer": f"Processing Error: {str(e)}"}
+        return await _safe_agent_invoke(user_text)
 
 
 # --- ANALYTICS & STOCKOUT ENDPOINTS (PRESERVED) ---

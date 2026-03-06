@@ -26,7 +26,7 @@ const SaleRepo = require('./database/repositories/SaleRepository');
 const SupplierRepo = require('./database/repositories/SupplierRepository');
 const SettingsRepo = require('./database/repositories/SettingsRepository');
 
-const appFolderName = "NexusRetailOS"; 
+const appFolderName = "NexusRetailOS";
 const customPath = path.join(app.getPath('appData'), appFolderName);
 app.setPath('userData', customPath);
 
@@ -46,31 +46,31 @@ let backendProcess = null;
 async function injectKeysIntoPython() {
   try {
     console.log('🔑 Loading API keys from database...');
-    
+
     // 1. Read keys from database
     const groqKey = SettingsRepo.get('GROQ_API_KEY');
     const googleKey = SettingsRepo.get('GOOGLE_API_KEY');
-    
+
     // 2. If no keys found, skip (first run or user hasn't configured)
     if (!groqKey && !googleKey) {
       console.log('⚠️  No API keys configured. User needs to set them in Settings page.');
       return;
     }
-    
+
     // 3. Wait for Python server to be ready (max 15 seconds)
     const maxAttempts = 30;
     let attempt = 0;
     let pythonReady = false;
-    
+
     console.log('⏳ Waiting for Python server to initialize...');
-    
+
     while (attempt < maxAttempts && !pythonReady) {
       try {
-        const response = await fetch(`${config.backendUrl}/health`, { 
+        const response = await fetch(`${config.backendUrl}/health`, {
           method: 'GET',
           signal: AbortSignal.timeout(500)
         });
-        
+
         if (response.ok) {
           pythonReady = true;
           console.log('✅ Python server is ready');
@@ -81,15 +81,15 @@ async function injectKeysIntoPython() {
         attempt++;
       }
     }
-    
+
     if (!pythonReady) {
       console.error('❌ Python server failed to start within 15 seconds');
       return;
     }
-    
+
     // 4. Send keys to Python via POST /settings
     console.log('📤 Injecting API keys into Python memory...');
-    
+
     const response = await fetch(`${config.backendUrl}/settings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -98,7 +98,7 @@ async function injectKeysIntoPython() {
         google_api_key: googleKey || ''
       })
     });
-    
+
     if (response.ok) {
       const result = await response.json();
       console.log('✅ API keys injected successfully:', result.message);
@@ -106,7 +106,7 @@ async function injectKeysIntoPython() {
       const errorText = await response.text();
       console.error('❌ Failed to inject keys. Python response:', errorText);
     }
-    
+
   } catch (error) {
     console.error('❌ Error during key injection:', error.message);
   }
@@ -143,11 +143,11 @@ function startBackend() {
     backendProcess = spawn(executable, [], {
       stdio: ['ignore', 'pipe', 'pipe'], // 'pipe' enables listening to stdout
       windowsHide: true,
-      
+
       // ⚡ FIX 2: Set Working Directory (CWD) to the EXE folder
       // This ensures XGBoost and Prophet can find their internal files
       cwd: path.dirname(executable),
-      
+
       env: {
         ...process.env,
         NEXUS_USER_DATA: userDataPath, // Pass the shared cache path
@@ -163,10 +163,10 @@ function startBackend() {
     });
 
     backendProcess.on('exit', (code, signal) => {
-       if (code !== 0 && code !== null) {
-          console.warn(`⚠️ Backend exited unexpectedly with code ${code}`);
-       }
-       backendProcess = null;
+      if (code !== 0 && code !== null) {
+        console.warn(`⚠️ Backend exited unexpectedly with code ${code}`);
+      }
+      backendProcess = null;
     });
 
     // ✅ NEW: Inject API keys after Python spawns
@@ -183,24 +183,24 @@ function startBackend() {
 
     // --- LISTEN FOR SIGNALS (Production Only) ---
     if (backendProcess.stdout) {
-        backendProcess.stdout.on('data', (data) => {
-          const str = data.toString().trim();
-          
-          // Debug Log (Optional - helpful to see if Uvicorn starts)
-          // console.log(`[Python]: ${str}`);
+      backendProcess.stdout.on('data', (data) => {
+        const str = data.toString().trim();
 
-          // THE MAGIC SIGNAL TRIGGER
-          if (str.includes('>>ANALYTICS_READY<<')) {
-            console.log("⚡ Analytics Finished. Refreshing UI...");
-            if (mainWindow) {
-              mainWindow.webContents.send('analytics:ready');
-            }
+        // Debug Log (Optional - helpful to see if Uvicorn starts)
+        // console.log(`[Python]: ${str}`);
+
+        // THE MAGIC SIGNAL TRIGGER
+        if (str.includes('>>ANALYTICS_READY<<')) {
+          console.log("⚡ Analytics Finished. Refreshing UI...");
+          if (mainWindow) {
+            mainWindow.webContents.send('analytics:ready');
           }
-        });
+        }
+      });
     }
 
     if (backendProcess.stderr) {
-        backendProcess.stderr.on('data', (data) => console.error(`[Python Error]: ${data}`));
+      backendProcess.stderr.on('data', (data) => console.error(`[Python Error]: ${data}`));
     }
 
   } catch (e) {
@@ -214,7 +214,7 @@ function killBackend() {
   if (!backendProcess) return;
 
   // 1. Try Graceful Shutdown first
-  backendProcess.kill('SIGTERM'); 
+  backendProcess.kill('SIGTERM');
 
   // 2. Force kill if it doesn't close within 3 seconds
   setTimeout(() => {
@@ -222,9 +222,9 @@ function killBackend() {
       console.log("Backend did not exit gracefully. Force killing...");
       try {
         if (process.platform === 'win32') {
-            execSync(`taskkill /pid ${backendProcess.pid} /T /F`);
+          execSync(`taskkill /pid ${backendProcess.pid} /T /F`);
         } else {
-            backendProcess.kill('SIGKILL');
+          backendProcess.kill('SIGKILL');
         }
       } catch (e) {
         // Ignore errors if it's already dead
@@ -273,7 +273,6 @@ function createWindow() {
 
   if (config.isDev) {
     mainWindow.loadURL('http://localhost:3000');
-    mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadFile(path.join(__dirname, '..', 'build', 'index.html'));
   }
@@ -289,14 +288,14 @@ app.whenReady().then(() => {
   try {
     // 1. RUN MIGRATIONS (Native JS)
     // This is synchronous. If it fails, it throws an error.
-    const migrationSuccess = runMigrations(); 
-    
+    const migrationSuccess = runMigrations();
+
     if (migrationSuccess) {
       // 2. CONTINUE STARTUP
       initSchema();
       startBackend();
       createWindow();
-      
+
       if (!config.isDev) { // Only run updater in Production
         setTimeout(() => {
           setupAutoUpdater();
@@ -311,7 +310,7 @@ app.whenReady().then(() => {
     // 3. FATAL ERROR UI
     console.error("Startup Failed:", err);
     dialog.showErrorBox(
-      'Startup Error', 
+      'Startup Error',
       'Database update failed. The app cannot start.\n\nError: ' + err.message
     );
     app.exit(1);
@@ -333,7 +332,7 @@ app.on('window-all-closed', () => {
 // ==========================================
 function setupAutoUpdater() {
   console.log('🔍 Checking for updates...');
-  
+
   // 1. Check Immediately
   autoUpdater.checkForUpdatesAndNotify();
 
@@ -366,7 +365,7 @@ function setupAutoUpdater() {
 
   autoUpdater.on('update-downloaded', (info) => {
     log.info('Update downloaded');
-    
+
     // 3. Prompt User to Restart
     dialog.showMessageBox({
       type: 'info',
@@ -376,7 +375,7 @@ function setupAutoUpdater() {
     }).then((result) => {
       if (result.response === 0) { // Index 0 = "Restart Now"
         // silent = true, forceRunAfter = true
-        autoUpdater.quitAndInstall(false, true); 
+        autoUpdater.quitAndInstall(false, true);
       }
     });
   });
@@ -389,14 +388,17 @@ function setupAutoUpdater() {
 // Helper for Python Requests
 // Helper for Python Requests
 const fetchPython = async (endpoint, method = 'GET', body = null) => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 35000);
   try {
     // CACHE BUSTING: Append timestamp to prevent Electron/Chromium from caching local GET requests
     const separator = endpoint.includes('?') ? '&' : '?';
     const url = `${config.backendUrl}${endpoint}${separator}_t=${Date.now()}`;
-    
+
     const options = {
       method,
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
     };
     if (body) options.body = JSON.stringify(body);
 
@@ -404,7 +406,12 @@ const fetchPython = async (endpoint, method = 'GET', body = null) => {
     if (!response.ok) throw new Error(`Python API Error: ${response.statusText}`);
     return await response.json();
   } catch (err) {
+    if (err.name === 'AbortError') {
+      return { status: "Inactive", error: "Request timed out (35s)", error_type: "timeout" };
+    }
     return { status: "Inactive", error: err.message };
+  } finally {
+    clearTimeout(timeoutId);
   }
 };
 
@@ -437,10 +444,10 @@ ipcMain.handle('app:export-ledger', async (e, s, end) => {
   try {
     const rows = await WorkerHandler.exportLedgerData(s, end);
     const stream = fs.createWriteStream(filePath, { encoding: 'utf8' });
-    
+
     stream.write("Date,Type,Transaction ID,Customer Name,Mobile,Address,Details,Amount\n");
-    
-    for(const row of rows) {
+
+    for (const row of rows) {
       const safeName = (row.customer_name || '').replace(/"/g, '""');
       const safeDetails = (row.details || '').replace(/"/g, '""');
       stream.write(`${row.date},${row.type},${row.transaction_id},"${safeName}","${row.customer_mobile}","${row.customer_address}","${safeDetails}",${row.amount}\n`);
@@ -461,7 +468,7 @@ ipcMain.handle('ai:transcribe', async (e, arrayBuffer) => {
     const blob = new Blob([arrayBuffer], { type: 'audio/webm' });
     const formData = new FormData();
     formData.append('file', blob, 'voice.webm');
-    
+
     const res = await fetch(`${config.backendUrl}/transcribe`, { method: 'POST', body: formData });
     if (!res.ok) throw new Error("Transcription Failed");
     return await res.json();
@@ -491,10 +498,10 @@ ipcMain.handle('settings:save', async (e, data) => {
     if (data.google_api_key) {
       SettingsRepo.set('GOOGLE_API_KEY', data.google_api_key);
     }
-    
+
     // 2. Send to Python (so it updates in-memory immediately)
     const result = await fetchPython('/settings', 'POST', data);
-    
+
     console.log('✅ Settings saved to database and sent to Python');
     return result;
   } catch (err) {
@@ -512,10 +519,10 @@ ipcMain.handle('dashboard:get-stats', () => {
   try {
     const custStats = CustomerRepo.getStats()
     const db = getDB()
-    
+
     const prodCount = db.prepare(`SELECT COUNT(*) as c FROM product_variant`).get().c
     const custCount = db.prepare(`SELECT COUNT(*) as c FROM customer`).get().c
-    
+
     const lowStock = db.prepare(`
       SELECT 
         p.name as product_name,
@@ -528,14 +535,14 @@ ipcMain.handle('dashboard:get-stats', () => {
       ORDER BY v.current_stock ASC
       LIMIT 50
     `).all()
-    
+
     // ✅ FIX: Map field names to match frontend expectations (with underscores)
     const debtors = custStats.topDebtors.map(debtor => ({
       name: debtor.name,
       mobile: debtor.mobile,
       outstanding_balance: debtor.outstandingbalance  // ✅ Add underscore
     }))
-    
+
     return {
       totaloutstandingcredit: custStats.credit || 0,
       totalproductvariants: prodCount || 0,
@@ -567,9 +574,9 @@ ipcMain.handle('dashboard:get-analytics', async () => {
   try {
     const userDataPath = app.getPath('userData');
     const cachePath = path.join(userDataPath, 'analytics_cache.json');
-    
+
     let analyticsData = null;
-    
+
     // 1. Try reading analytics_cache.json (Fast Load)
     if (fs.existsSync(cachePath)) {
       try {
@@ -577,7 +584,7 @@ ipcMain.handle('dashboard:get-analytics', async () => {
         const parsed = JSON.parse(raw);
         const cacheTime = new Date(parsed.timestamp).getTime();
         const now = Date.now();
-        
+
         // 4 Hours Expiry
         if ((now - cacheTime) < 14400000 && parsed.data) {
           analyticsData = parsed.data;
@@ -586,7 +593,7 @@ ipcMain.handle('dashboard:get-analytics', async () => {
         console.warn("Corrupt analytics cache");
       }
     }
-    
+
     // 2. If cache stale/missing, fetch from Python (Source of Truth)
     if (!analyticsData) {
       const res = await fetchPython('/analytics/dashboard');
@@ -601,13 +608,13 @@ ipcMain.handle('dashboard:get-analytics', async () => {
         stock: item.stock,
         days_left: item.days_left,
         status: item.status,
-        metrics: item.metrics || null, 
+        metrics: item.metrics || null,
         recommendation: item.recommendation || null
       }));
     }
 
     return analyticsData || { status: 'unavailable', data: null };
-    
+
   } catch (err) {
     console.warn("Analytics unavailable:", err.message);
     return { status: 'unavailable', data: null };

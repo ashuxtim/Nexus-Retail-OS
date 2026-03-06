@@ -17,6 +17,9 @@ module.exports = defineConfig({
   server: {
     port: 3000,
     strictPort: true,
+    watch: {
+      ignored: ['**/python_server/venv/**'],
+    },
   },
   build: {
     outDir: 'build',

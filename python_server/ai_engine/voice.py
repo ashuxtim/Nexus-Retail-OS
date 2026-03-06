@@ -44,6 +44,7 @@ def transcribe_audio_engine(file_bytes, filename="voice.webm", api_key=None):
             t = client.audio.transcriptions.create(
                 file=(temp_filename, f.read()),
                 model="whisper-large-v3",
+                language="en",
                 prompt="User asking about grocery inventory, sales, churn, and customers.",
                 response_format="json",
             )
