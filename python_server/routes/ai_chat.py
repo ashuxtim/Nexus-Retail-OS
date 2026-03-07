@@ -13,12 +13,22 @@ from scripts.backend_logging import get_logger
 # Pattern router + pre-built queries (zero LLM)
 from ai_engine.router import route_query
 from ai_engine.queries import (
-    get_top_customers, get_today_sales, get_monthly_revenue,
-    get_weekly_revenue, get_recent_sales, get_top_products,
-    get_low_stock, get_out_of_stock, get_all_products,
-    get_all_customers, search_product, search_customer,
-    get_customer_purchase_history, get_all_suppliers,
-    get_recent_purchases, get_quick_summary,
+    get_top_customers,
+    get_today_sales,
+    get_monthly_revenue,
+    get_weekly_revenue,
+    get_recent_sales,
+    get_top_products,
+    get_low_stock,
+    get_out_of_stock,
+    get_all_products,
+    get_all_customers,
+    search_product,
+    search_customer,
+    get_customer_purchase_history,
+    get_all_suppliers,
+    get_recent_purchases,
+    get_quick_summary,
 )
 
 router = APIRouter()
@@ -34,6 +44,7 @@ class AskRequest(BaseModel):
 # ─────────────────────────────────────────
 # LLM Agent Invocation (langgraph)
 # ─────────────────────────────────────────
+
 
 async def _safe_agent_invoke(prompt: str):
     """Invoke lean agent with timeout and error handling."""
@@ -105,6 +116,7 @@ async def _safe_agent_invoke(prompt: str):
 # Python query handler (zero LLM)
 # ─────────────────────────────────────────
 
+
 def _handle_python_query(fn_name, arg):
     """Execute a pre-built Python query. Returns dict or None (→ LLM fallback)."""
     engine = state.raw_engine
@@ -121,7 +133,9 @@ def _handle_python_query(fn_name, arg):
     elif fn_name == "today_sales":
         count, total = get_today_sales(engine)
         total = total or 0
-        return {"answer": f"📊 **Today's Sales:**\n\n• Transactions: {count}\n• Revenue: ₹{total:,.2f}"}
+        return {
+            "answer": f"📊 **Today's Sales:**\n\n• Transactions: {count}\n• Revenue: ₹{total:,.2f}"
+        }
 
     elif fn_name == "monthly_revenue":
         total = get_monthly_revenue(engine)
@@ -135,7 +149,9 @@ def _handle_python_query(fn_name, arg):
         rows = get_recent_sales(engine, limit=10)
         if not rows:
             return {"answer": "No recent sales found."}
-        lines = "\n".join([f"• {r[0]} → {r[1]} {r[2]} x{r[3]} @ ₹{r[4]} ({r[5]})" for r in rows])
+        lines = "\n".join(
+            [f"• {r[0]} → {r[1]} {r[2]} x{r[3]} @ ₹{r[4]} ({r[5]})" for r in rows]
+        )
         return {"answer": f"🧾 **Recent Sales:**\n\n{lines}"}
 
     elif fn_name == "top_products":
@@ -143,7 +159,9 @@ def _handle_python_query(fn_name, arg):
         rows = get_top_products(engine, limit=limit)
         if not rows:
             return {"answer": "No sales data yet."}
-        lines = "\n".join([f"{i+1}. {r[0]} - {r[1]}: {r[2]} units sold" for i, r in enumerate(rows)])
+        lines = "\n".join(
+            [f"{i+1}. {r[0]} - {r[1]}: {r[2]} units sold" for i, r in enumerate(rows)]
+        )
         return {"answer": f"🛒 **Top {limit} Products:**\n\n{lines}"}
 
     # ── Inventory ──
@@ -151,8 +169,12 @@ def _handle_python_query(fn_name, arg):
         threshold = arg if isinstance(arg, int) else 10
         rows = get_low_stock(engine, threshold=threshold)
         if not rows:
-            return {"answer": f"✅ No products below {threshold} units. Stock is healthy!"}
-        lines = "\n".join([f"⚠️ {r[0]} - {r[1]}: **{r[2]} units** [{r[3]}]" for r in rows[:30]])
+            return {
+                "answer": f"✅ No products below {threshold} units. Stock is healthy!"
+            }
+        lines = "\n".join(
+            [f"⚠️ {r[0]} - {r[1]}: **{r[2]} units** [{r[3]}]" for r in rows[:30]]
+        )
         return {"answer": f"⚠️ **Low Stock Alert ({len(rows)} items):**\n\n{lines}"}
 
     elif fn_name == "out_of_stock":
@@ -166,8 +188,12 @@ def _handle_python_query(fn_name, arg):
         rows = get_all_products(engine)
         if not rows:
             return {"answer": "No products found."}
-        lines = "\n".join([f"• {r[0]} - {r[1]}: ₹{r[2]} | Stock: {r[3]}" for r in rows[:30]])
-        return {"answer": f"📦 **Products ({len(rows)} total, showing first 30):**\n\n{lines}"}
+        lines = "\n".join(
+            [f"• {r[0]} - {r[1]}: ₹{r[2]} | Stock: {r[3]}" for r in rows[:30]]
+        )
+        return {
+            "answer": f"📦 **Products ({len(rows)} total, showing first 30):**\n\n{lines}"
+        }
 
     elif fn_name == "search_product":
         rows = search_product(engine, arg)
@@ -182,7 +208,9 @@ def _handle_python_query(fn_name, arg):
         if not rows:
             return {"answer": "No customers found."}
         lines = "\n".join([f"• {r[0]} ({r[1]})" for r in rows[:30]])
-        return {"answer": f"👥 **Customers ({len(rows)} total, showing first 30):**\n\n{lines}"}
+        return {
+            "answer": f"👥 **Customers ({len(rows)} total, showing first 30):**\n\n{lines}"
+        }
 
     elif fn_name == "search_customer":
         rows = search_customer(engine, arg)
@@ -210,7 +238,9 @@ def _handle_python_query(fn_name, arg):
         rows = get_recent_purchases(engine)
         if not rows:
             return {"answer": "No recent purchases."}
-        lines = "\n".join([f"• {r[0]} → {r[1]} {r[2]} x{r[3]} @ ₹{r[4]} ({r[5]})" for r in rows])
+        lines = "\n".join(
+            [f"• {r[0]} → {r[1]} {r[2]} x{r[3]} @ ₹{r[4]} ({r[5]})" for r in rows]
+        )
         return {"answer": f"📥 **Recent Purchases:**\n\n{lines}"}
 
     # ── Analytics (from cache) ──
@@ -219,6 +249,7 @@ def _handle_python_query(fn_name, arg):
         risks = []
         try:
             from analytics import AnalyticsEngine
+
             analytics = AnalyticsEngine(state.raw_engine, base_dir=state.BASE_DIR)
             dashboard = analytics.get_dashboard_metrics()
             dash_data = dashboard.get("data", dashboard)  # handle nested or flat
@@ -232,13 +263,16 @@ def _handle_python_query(fn_name, arg):
         sorted_risks = sorted(risks, key=lambda x: x.get("risk_score", 0), reverse=True)
         report = f"🤖 **AI Churn Report (Total At-Risk: {len(sorted_risks)}):**\n\n"
         for r in sorted_risks[:15]:
-            report += f"🔴 **{r.get('name', 'Unknown')}** (Risk: {r.get('risk_score', 0)}%)\n"
+            report += (
+                f"🔴 **{r.get('name', 'Unknown')}** (Risk: {r.get('risk_score', 0)}%)\n"
+            )
             report += f"   Reason: {r.get('trend', 'N/A')} • Inactive: {r.get('days_inactive', 0)} days\n\n"
         return {"answer": report}
 
     elif fn_name == "market_basket":
         try:
             from analytics import AnalyticsEngine
+
             analytics = AnalyticsEngine(state.raw_engine, base_dir=state.BASE_DIR)
             dashboard = analytics.get_dashboard_metrics()
             dash_data = dashboard.get("data", dashboard)
@@ -247,13 +281,19 @@ def _handle_python_query(fn_name, arg):
                 rules = mb["rules"][:10]  # Top 10 only
                 lines = []
                 for i, r in enumerate(rules, 1):
-                    ant = r.get('antecedent', ['?'])
-                    con = r.get('consequent', ['?'])
+                    ant = r.get("antecedent", ["?"])
+                    con = r.get("consequent", ["?"])
                     # Clean up list brackets if present
                     ant_str = ant[0] if isinstance(ant, list) else str(ant).strip("[]'")
                     con_str = con[0] if isinstance(con, list) else str(con).strip("[]'")
-                    lines.append(f"{i}. Customers who buy **{ant_str}** often also buy **{con_str}**")
-                return {"answer": f"🛒 **Shopping Patterns — What sells together:**\n\n" + "\n".join(lines) + "\n\n💡 *Place these products near each other to boost sales!*"}
+                    lines.append(
+                        f"{i}. Customers who buy **{ant_str}** often also buy **{con_str}**"
+                    )
+                return {
+                    "answer": f"🛒 **Shopping Patterns — What sells together:**\n\n"
+                    + "\n".join(lines)
+                    + "\n\n💡 *Place these products near each other to boost sales!*"
+                }
             elif isinstance(mb, str):
                 return {"answer": f"🛒 **Shopping Patterns:**\n{mb}"}
             else:
@@ -266,13 +306,15 @@ def _handle_python_query(fn_name, arg):
     # ── Dashboard ──
     elif fn_name == "summary":
         s = get_quick_summary(engine)
-        return {"answer": (
-            f"📊 **Quick Summary:**\n\n"
-            f"• Today's Sales: {s['today_sales_count']} transactions — ₹{s['today_revenue']:,.2f}\n"
-            f"• Low Stock Items: {s['low_stock_items']}\n"
-            f"• Total Customers: {s['total_customers']}\n"
-            f"• Total Products: {s['total_products']}"
-        )}
+        return {
+            "answer": (
+                f"📊 **Quick Summary:**\n\n"
+                f"• Today's Sales: {s['today_sales_count']} transactions — ₹{s['today_revenue']:,.2f}\n"
+                f"• Low Stock Items: {s['low_stock_items']}\n"
+                f"• Total Customers: {s['total_customers']}\n"
+                f"• Total Products: {s['total_products']}"
+            )
+        }
 
     return None  # Unknown fn → LLM fallback
 
@@ -280,6 +322,7 @@ def _handle_python_query(fn_name, arg):
 # ─────────────────────────────────────────
 # Main endpoint
 # ─────────────────────────────────────────
+
 
 @router.post("/ask")
 async def ask_agent(q: AskRequest):
@@ -294,7 +337,9 @@ async def ask_agent(q: AskRequest):
     # ── 0. Greetings (zero LLM) ──
     greetings = {"hi", "hello", "hey", "hola", "greetings", "test", "ping", "yo"}
     if user_text.lower() in greetings:
-        return {"answer": "👋 Hello! I am NexusRetail OS AI. Ask me about sales, inventory, or customers."}
+        return {
+            "answer": "👋 Hello! I am NexusRetail OS AI. Ask me about sales, inventory, or customers."
+        }
 
     # ── 1. Pattern Router (zero LLM) ──
     fn_name, arg = route_query(user_text)
@@ -313,7 +358,9 @@ async def ask_agent(q: AskRequest):
         try:
             result = await asyncio.wait_for(
                 asyncio.to_thread(
-                    lambda: state.safety_guard.llm.invoke(f"User: {user_text}. Reply helpfully.").content
+                    lambda: state.safety_guard.llm.invoke(
+                        f"User: {user_text}. Reply helpfully."
+                    ).content
                 ),
                 timeout=AI_TIMEOUT,
             )
@@ -323,7 +370,10 @@ async def ask_agent(q: AskRequest):
         except Exception as e:
             err_str = str(e).lower()
             if "rate_limit" in err_str or "429" in err_str:
-                return {"answer": "⏳ API rate limit reached.", "error_type": "rate_limit"}
+                return {
+                    "answer": "⏳ API rate limit reached.",
+                    "error_type": "rate_limit",
+                }
             logger.error(f"Chat fallback failed: {e}")
             return {"answer": "I'm online. Ask me about your data!"}
 

@@ -13,17 +13,41 @@ class SafetyGuard:
 
         # --- Query keywords (bypasses LLM classification) ---
         self.query_keywords = [
-            "show", "list", "get", "find", "search",
-            "how many", "what is", "what are", "which",
-            "total", "sales", "stock", "revenue", "report",
-            "top", "best", "low", "inventory", "customer",
-            "supplier", "product", "purchase", "history",
-            "summary", "dashboard", "overview", "churn",
-            "market", "basket", "pattern", "forecast",
+            "show",
+            "list",
+            "get",
+            "find",
+            "search",
+            "how many",
+            "what is",
+            "what are",
+            "which",
+            "total",
+            "sales",
+            "stock",
+            "revenue",
+            "report",
+            "top",
+            "best",
+            "low",
+            "inventory",
+            "customer",
+            "supplier",
+            "product",
+            "purchase",
+            "history",
+            "summary",
+            "dashboard",
+            "overview",
+            "churn",
+            "market",
+            "basket",
+            "pattern",
+            "forecast",
         ]
         self._query_re = re.compile(
-            r'\b(' + '|'.join(re.escape(w) for w in self.query_keywords) + r')\b',
-            re.IGNORECASE
+            r"\b(" + "|".join(re.escape(w) for w in self.query_keywords) + r")\b",
+            re.IGNORECASE,
         )
 
     def classify_intent(self, user_text: str) -> str:

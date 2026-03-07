@@ -63,6 +63,7 @@ def check_churn_risk_tool():
     try:
         from analytics import AnalyticsEngine
         from core import state as _state
+
         analytics = AnalyticsEngine(_state.raw_engine, base_dir=_state.BASE_DIR)
         dashboard = analytics.get_dashboard_metrics()
         dash_data = dashboard.get("data", dashboard)
@@ -76,7 +77,9 @@ def check_churn_risk_tool():
     sorted_risks = sorted(risks, key=lambda x: x.get("risk_score", 0), reverse=True)
     report = f"🤖 **AI Churn Report (Total At-Risk: {len(sorted_risks)}):**\n\n"
     for r in sorted_risks[:15]:
-        report += f"🔴 **{r.get('name', 'Unknown')}** (Risk: {r.get('risk_score', 0)}%)\n"
+        report += (
+            f"🔴 **{r.get('name', 'Unknown')}** (Risk: {r.get('risk_score', 0)}%)\n"
+        )
         report += f"   Reason: {r.get('trend', 'N/A')} • Inactive: {r.get('days_inactive', 0)} days\n\n"
     return report
 
@@ -87,6 +90,7 @@ def get_market_insights_tool():
     try:
         from analytics import AnalyticsEngine
         from core import state as _state
+
         analytics = AnalyticsEngine(_state.raw_engine, base_dir=_state.BASE_DIR)
         dashboard = analytics.get_dashboard_metrics()
         dash_data = dashboard.get("data", dashboard)
@@ -95,12 +99,18 @@ def get_market_insights_tool():
             rules = mb["rules"][:10]
             lines = []
             for i, r in enumerate(rules, 1):
-                ant = r.get('antecedent', ['?'])
-                con = r.get('consequent', ['?'])
+                ant = r.get("antecedent", ["?"])
+                con = r.get("consequent", ["?"])
                 ant_str = ant[0] if isinstance(ant, list) else str(ant).strip("[]'")
                 con_str = con[0] if isinstance(con, list) else str(con).strip("[]'")
-                lines.append(f"{i}. Customers who buy **{ant_str}** often also buy **{con_str}**")
-            return f"🛒 **Shopping Patterns — What sells together:**\n\n" + "\n".join(lines) + "\n\n💡 *Place these products near each other to boost sales!*"
+                lines.append(
+                    f"{i}. Customers who buy **{ant_str}** often also buy **{con_str}**"
+                )
+            return (
+                f"🛒 **Shopping Patterns — What sells together:**\n\n"
+                + "\n".join(lines)
+                + "\n\n💡 *Place these products near each other to boost sales!*"
+            )
         return "🛒 Market basket analysis pending..."
     except Exception:
         return f"🛒 **Shopping Patterns:**\n{ANALYTICS_CACHE.get('market_basket', 'Analysis pending...')}"
@@ -201,9 +211,9 @@ def get_business_overview_tool():
                 ORDER BY pv.current_stock ASC LIMIT 5
             """)).fetchall()
 
-            out_count = c.execute(text(
-                "SELECT COUNT(*) FROM product_variant WHERE current_stock <= 0"
-            )).fetchone()[0]
+            out_count = c.execute(
+                text("SELECT COUNT(*) FROM product_variant WHERE current_stock <= 0")
+            ).fetchone()[0]
 
             if out_count > 0 or urgent:
                 report += "## 📦 Inventory Alerts\n"
@@ -329,7 +339,8 @@ def get_top_performers_tool(metric: str = "revenue", limit: int = 10):
             return "Database not connected."
 
         with RAW_ENGINE.connect() as c:
-            top = c.execute(text("""
+            top = c.execute(
+                text("""
                 SELECT p.name, pv.name as variant, p.category,
                        SUM(csi.quantity) as qty_sold,
                        ROUND(SUM(csi.quantity * csi.price_at_sale), 2) as total_revenue
@@ -341,9 +352,12 @@ def get_top_performers_tool(metric: str = "revenue", limit: int = 10):
                 GROUP BY pv.id
                 ORDER BY total_revenue DESC
                 LIMIT :limit
-            """), {"limit": limit}).fetchall()
+            """),
+                {"limit": limit},
+            ).fetchall()
 
-            dead = c.execute(text("""
+            dead = c.execute(
+                text("""
                 SELECT p.name, pv.name as variant, pv.current_stock, p.category
                 FROM product_variant pv
                 JOIN product p ON pv.product_id = p.id
@@ -356,19 +370,25 @@ def get_top_performers_tool(metric: str = "revenue", limit: int = 10):
                 )
                 ORDER BY pv.current_stock DESC
                 LIMIT :limit
-            """), {"limit": limit}).fetchall()
+            """),
+                {"limit": limit},
+            ).fetchall()
 
         report = "🏆 **Top Sellers (Last 30 Days):**\n\n"
         if top:
             for i, r in enumerate(top, 1):
-                report += f"{i}. **{r[0]} - {r[1]}** [{r[2]}] — {r[3]} units, ₹{r[4]:,.0f}\n"
+                report += (
+                    f"{i}. **{r[0]} - {r[1]}** [{r[2]}] — {r[3]} units, ₹{r[4]:,.0f}\n"
+                )
         else:
             report += "No sales data in last 30 days.\n"
 
         report += f"\n💀 **Dead Stock (No sales in 30 days, still in stock):**\n\n"
         if dead:
             for r in dead:
-                report += f"• {r[0]} - {r[1]} [{r[3]}] — **{r[2]} units** sitting idle\n"
+                report += (
+                    f"• {r[0]} - {r[1]} [{r[3]}] — **{r[2]} units** sitting idle\n"
+                )
         else:
             report += "No dead stock detected — all products are selling!\n"
 
@@ -431,7 +451,9 @@ def get_customer_segments_tool():
             """)).fetchone()
 
         report = f"👥 **Customer Intelligence Report:**\n\n"
-        report += f"🧺 Average Basket Size (30 days): **₹{avg_basket[0] or 0:,.0f}**\n\n"
+        report += (
+            f"🧺 Average Basket Size (30 days): **₹{avg_basket[0] or 0:,.0f}**\n\n"
+        )
 
         report += "💎 **Top 10 Customers by Spend:**\n"
         for i, r in enumerate(top_spenders, 1):
@@ -502,7 +524,9 @@ def get_inventory_velocity_tool():
                 report += f"• **{r[0]} - {r[1]}** — {r[2]} units left, sells {r[3]}/day → **{r[4]} days**\n"
             report += "\n"
 
-        fast = sorted([r for r in velocity if r[3] > 0], key=lambda x: x[3], reverse=True)[:10]
+        fast = sorted(
+            [r for r in velocity if r[3] > 0], key=lambda x: x[3], reverse=True
+        )[:10]
         if fast:
             report += "🚀 **Fast Movers (Highest daily sales):**\n"
             for r in fast:
@@ -580,4 +604,3 @@ def get_revenue_comparison_tool():
         return report
     except Exception as e:
         return f"Error: {e}"
-

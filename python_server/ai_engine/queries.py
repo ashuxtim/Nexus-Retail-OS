@@ -4,15 +4,16 @@
 
 from sqlalchemy import text
 
-
 # ─────────────────────────────────────────
 # SALES QUERIES
 # ─────────────────────────────────────────
 
+
 def get_top_customers(engine, limit=5):
     """Top customers by total purchase value."""
     with engine.connect() as c:
-        rows = c.execute(text("""
+        rows = c.execute(
+            text("""
             SELECT c.name, ROUND(SUM(csi.quantity * csi.price_at_sale), 2) as total
             FROM customer c
             JOIN credit_sale cs ON c.id = cs.customer_id
@@ -20,7 +21,9 @@ def get_top_customers(engine, limit=5):
             GROUP BY c.id, c.name
             ORDER BY total DESC
             LIMIT :limit
-        """), {"limit": limit}).fetchall()
+        """),
+            {"limit": limit},
+        ).fetchall()
     return rows
 
 
@@ -63,7 +66,8 @@ def get_weekly_revenue(engine):
 def get_recent_sales(engine, limit=10):
     """Most recent sales transactions."""
     with engine.connect() as c:
-        rows = c.execute(text("""
+        rows = c.execute(
+            text("""
             SELECT c.name, p.name, pv.name, csi.quantity,
                    csi.price_at_sale, cs.sale_date
             FROM credit_sale cs
@@ -73,7 +77,9 @@ def get_recent_sales(engine, limit=10):
             JOIN product p ON pv.product_id = p.id
             ORDER BY cs.sale_date DESC
             LIMIT :limit
-        """), {"limit": limit}).fetchall()
+        """),
+            {"limit": limit},
+        ).fetchall()
     return rows
 
 
@@ -81,16 +87,20 @@ def get_recent_sales(engine, limit=10):
 # INVENTORY QUERIES
 # ─────────────────────────────────────────
 
+
 def get_low_stock(engine, threshold=10):
     """Products with stock at or below threshold."""
     with engine.connect() as c:
-        rows = c.execute(text("""
+        rows = c.execute(
+            text("""
             SELECT p.name, pv.name, pv.current_stock, p.category
             FROM product_variant pv
             JOIN product p ON pv.product_id = p.id
             WHERE pv.current_stock <= :threshold
             ORDER BY pv.current_stock ASC
-        """), {"threshold": threshold}).fetchall()
+        """),
+            {"threshold": threshold},
+        ).fetchall()
     return rows
 
 
@@ -109,20 +119,24 @@ def get_out_of_stock(engine):
 def get_all_products(engine, limit=50):
     """List all products with stock and price."""
     with engine.connect() as c:
-        rows = c.execute(text("""
+        rows = c.execute(
+            text("""
             SELECT p.name, pv.name, pv.price, pv.current_stock, p.category
             FROM product_variant pv
             JOIN product p ON pv.product_id = p.id
             ORDER BY p.name ASC
             LIMIT :limit
-        """), {"limit": limit}).fetchall()
+        """),
+            {"limit": limit},
+        ).fetchall()
     return rows
 
 
 def search_product(engine, name):
     """Search product by name."""
     with engine.connect() as c:
-        rows = c.execute(text("""
+        rows = c.execute(
+            text("""
             SELECT p.name, pv.name, pv.price, pv.current_stock
             FROM product_variant pv
             JOIN product p ON pv.product_id = p.id
@@ -130,14 +144,17 @@ def search_product(engine, name):
                OR LOWER(pv.name) LIKE LOWER(:name)
             ORDER BY p.name ASC
             LIMIT 20
-        """), {"name": f"%{name}%"}).fetchall()
+        """),
+            {"name": f"%{name}%"},
+        ).fetchall()
     return rows
 
 
 def get_top_products(engine, limit=5):
     """Best selling products by quantity sold."""
     with engine.connect() as c:
-        rows = c.execute(text("""
+        rows = c.execute(
+            text("""
             SELECT p.name, pv.name, SUM(csi.quantity) as qty_sold
             FROM credit_sale_item csi
             JOIN product_variant pv ON csi.variant_id = pv.id
@@ -145,7 +162,9 @@ def get_top_products(engine, limit=5):
             GROUP BY pv.id
             ORDER BY qty_sold DESC
             LIMIT :limit
-        """), {"limit": limit}).fetchall()
+        """),
+            {"limit": limit},
+        ).fetchall()
     return rows
 
 
@@ -153,34 +172,42 @@ def get_top_products(engine, limit=5):
 # CUSTOMER QUERIES
 # ─────────────────────────────────────────
 
+
 def get_all_customers(engine, limit=50):
     """List all customers."""
     with engine.connect() as c:
-        rows = c.execute(text("""
+        rows = c.execute(
+            text("""
             SELECT name, mobile, address
             FROM customer
             ORDER BY name ASC
             LIMIT :limit
-        """), {"limit": limit}).fetchall()
+        """),
+            {"limit": limit},
+        ).fetchall()
     return rows
 
 
 def search_customer(engine, name):
     """Search customer by name."""
     with engine.connect() as c:
-        rows = c.execute(text("""
+        rows = c.execute(
+            text("""
             SELECT name, mobile, address
             FROM customer
             WHERE LOWER(name) LIKE LOWER(:name)
             LIMIT 10
-        """), {"name": f"%{name}%"}).fetchall()
+        """),
+            {"name": f"%{name}%"},
+        ).fetchall()
     return rows
 
 
 def get_customer_purchase_history(engine, customer_name, limit=10):
     """Purchase history for a specific customer."""
     with engine.connect() as c:
-        rows = c.execute(text("""
+        rows = c.execute(
+            text("""
             SELECT p.name, pv.name, csi.quantity,
                    csi.price_at_sale, cs.sale_date
             FROM credit_sale cs
@@ -191,13 +218,16 @@ def get_customer_purchase_history(engine, customer_name, limit=10):
             WHERE LOWER(c.name) LIKE LOWER(:name)
             ORDER BY cs.sale_date DESC
             LIMIT :limit
-        """), {"name": f"%{customer_name}%", "limit": limit}).fetchall()
+        """),
+            {"name": f"%{customer_name}%", "limit": limit},
+        ).fetchall()
     return rows
 
 
 # ─────────────────────────────────────────
 # SUPPLIER & PURCHASE QUERIES
 # ─────────────────────────────────────────
+
 
 def get_all_suppliers(engine):
     """List all suppliers."""
@@ -211,7 +241,8 @@ def get_all_suppliers(engine):
 def get_recent_purchases(engine, limit=10):
     """Most recent purchases from suppliers."""
     with engine.connect() as c:
-        rows = c.execute(text("""
+        rows = c.execute(
+            text("""
             SELECT s.name, p.name, pv.name, pit.quantity,
                    pit.unit_cost, pi.invoice_date
             FROM purchase_invoice pi
@@ -221,13 +252,16 @@ def get_recent_purchases(engine, limit=10):
             JOIN product p ON pv.product_id = p.id
             ORDER BY pi.invoice_date DESC
             LIMIT :limit
-        """), {"limit": limit}).fetchall()
+        """),
+            {"limit": limit},
+        ).fetchall()
     return rows
 
 
 # ─────────────────────────────────────────
 # SUMMARY / DASHBOARD
 # ─────────────────────────────────────────
+
 
 def get_quick_summary(engine):
     """Single call to get key dashboard numbers."""

@@ -12,7 +12,10 @@ from sqlalchemy import text, create_engine, event
 
 from core import state
 from core.time_utils import now as tz_now, sqlite_connect_args
-from core.key_store import save_keys as save_encrypted_keys, load_keys as load_encrypted_keys
+from core.key_store import (
+    save_keys as save_encrypted_keys,
+    load_keys as load_encrypted_keys,
+)
 from scripts.backend_logging import get_logger
 
 from ai_engine.agent_builder import build_nexus_agent
@@ -25,6 +28,7 @@ from models.churn.churn_predictor import ChurnPredictor
 try:
     from eval.model_performance import evaluate_churn_model, evaluate_forecast_model
     from mlops.model_manager import ModelManager
+
     MODEL_VALIDATION_AVAILABLE = True
 except ImportError:
     MODEL_VALIDATION_AVAILABLE = False
@@ -175,6 +179,7 @@ def initialize_ai():
 
         # 1b. Ensure DB indexes for fast name lookups
         from core.indexes import ensure_indexes
+
         ensure_indexes(state.raw_engine)
 
         # 2. Analytics & Vector Store
@@ -208,9 +213,7 @@ def initialize_ai():
             try:
                 from ai_engine.safety import SafetyGuard
 
-                agent, router_llm = build_nexus_agent(
-                    state.raw_engine, groq_key
-                )
+                agent, router_llm = build_nexus_agent(state.raw_engine, groq_key)
                 state.agent_executor = agent
                 state.safety_guard = SafetyGuard(router_llm) if router_llm else None
                 logger.info("✅ AI Agent Online")

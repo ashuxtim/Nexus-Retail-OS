@@ -29,6 +29,7 @@ def _get_machine_id() -> bytes:
     if os.name == "nt":
         try:
             import winreg
+
             key = winreg.OpenKey(
                 winreg.HKEY_LOCAL_MACHINE,
                 r"SOFTWARE\Microsoft\Cryptography",
@@ -44,9 +45,7 @@ def _get_machine_id() -> bytes:
 
 def _get_fernet() -> Fernet:
     """Derive a Fernet key from the machine ID using PBKDF2."""
-    raw_key = hashlib.pbkdf2_hmac(
-        "sha256", _get_machine_id(), _SALT, _ITERATIONS
-    )
+    raw_key = hashlib.pbkdf2_hmac("sha256", _get_machine_id(), _SALT, _ITERATIONS)
     # Fernet requires a 32-byte url-safe base64-encoded key
     fernet_key = base64.urlsafe_b64encode(raw_key[:32])
     return Fernet(fernet_key)

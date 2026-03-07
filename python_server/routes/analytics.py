@@ -17,6 +17,7 @@ from models.forecast.forecaster import RevenueForecaster
 # MLOps (optional)
 try:
     from mlops.model_manager import ModelManager
+
     MODEL_MANAGER_AVAILABLE = True
 except ImportError:
     MODEL_MANAGER_AVAILABLE = False
@@ -185,7 +186,8 @@ async def get_cache_stats():
         if not state.raw_engine:
             return {"success": False, "error": "Database not initialized"}
         predictor = StockoutPredictor(
-            db_engine=state.raw_engine, config={"use_cache": True, "n_simulations": 10000}
+            db_engine=state.raw_engine,
+            config={"use_cache": True, "n_simulations": 10000},
         )
         return {"success": True, "cache_stats": predictor.cache.get_stats()}
     except Exception as e:
@@ -197,7 +199,9 @@ async def clear_cache(variant_id: int = None):
     try:
         if not state.raw_engine:
             return {"success": False, "error": "Database not initialized"}
-        predictor = StockoutPredictor(db_engine=state.raw_engine, config={"use_cache": True})
+        predictor = StockoutPredictor(
+            db_engine=state.raw_engine, config={"use_cache": True}
+        )
         predictor.cache.invalidate(variant_id)
         return {
             "success": True,
@@ -213,7 +217,9 @@ async def cleanup_expired_cache():
     try:
         if not state.raw_engine:
             return {"success": False, "error": "Database not initialized"}
-        predictor = StockoutPredictor(db_engine=state.raw_engine, config={"use_cache": True})
+        predictor = StockoutPredictor(
+            db_engine=state.raw_engine, config={"use_cache": True}
+        )
         return {
             "success": True,
             "expired_entries_removed": predictor.cache.cleanup_expired(),
