@@ -8,22 +8,24 @@ import ErrorBoundary from './components/ErrorBoundary';
 import GlobalShortcutListener from './components/GlobalShortcutListener';
 
 // --- ICONS ---
-import { 
-  LayoutDashboard, 
-  ShoppingCart, 
-  Users, 
-  Package, 
-  Truck, 
-  Search, 
-  Settings, 
-  BookOpen, 
-  Menu, 
-  CalendarCheck, 
-  Bell, 
-  Calendar, 
+import {
+  LayoutDashboard,
+  ShoppingCart,
+  Users,
+  Package,
+  Truck,
+  Search,
+  Settings,
+  BookOpen,
+  Menu,
+  CalendarCheck,
+  Bell,
+  Calendar,
   DollarSign,
   FileText,
-  Store
+  Store,
+  Sun,
+  Moon
 } from 'lucide-react';
 
 import { cn } from "@/lib/utils";
@@ -66,6 +68,13 @@ function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [notifications, setNotifications] = useState([]);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
+  const [darkMode, setDarkMode] = useState(() => localStorage.getItem('nexus-dark-mode') === 'true');
+
+  // --- DARK MODE ---
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', darkMode);
+    localStorage.setItem('nexus-dark-mode', darkMode);
+  }, [darkMode]);
 
   // --- QUICK SETTLE STATE ---
   const [settleOpen, setSettleOpen] = useState(false);
@@ -148,8 +157,8 @@ function App() {
 
   // --- SIDEBAR COMPONENT (Standardized & Fixed) ---
   const SidebarContent = () => (
-    <div className="flex flex-col h-full bg-zinc-950 text-slate-300">
-      {/* 1. BRANDING HEADER (FIXED & IMPROVED) */}
+    <div className={cn("flex flex-col h-full transition-colors", darkMode ? "bg-[#0c0c0c] text-slate-300" : "bg-[#f8f9fb] text-slate-700")}>
+      {/* 1. BRANDING HEADER */}
       <div className="px-6 py-8">
         <div className="flex items-center gap-4 mb-2">
           {/* Logo Container */}
@@ -157,14 +166,14 @@ function App() {
             <Store size={24} fill="currentColor" className="text-white drop-shadow-sm" />
           </div>
           <div>
-            <h1 className="text-2xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white via-white to-blue-200">
-               {BRAND_CONFIG.APP_NAME}
+            <h1 className={cn("text-2xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r", darkMode ? "from-white via-white to-blue-200" : "from-slate-900 via-slate-800 to-blue-600")}>
+              {BRAND_CONFIG.APP_NAME}
             </h1>
           </div>
         </div>
       </div>
 
-      <Separator className="bg-zinc-800/60 mx-6 w-auto mb-6" />
+      <Separator className={cn("mx-6 w-auto mb-6", darkMode ? "bg-zinc-800/60" : "bg-slate-200")} />
 
       {/* 2. NAVIGATION */}
       <nav className="flex-1 px-4 space-y-1.5 overflow-y-auto">
@@ -178,18 +187,20 @@ function App() {
                 "group flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium transition-all duration-200",
                 isActive
                   ? "bg-blue-600/90 text-white shadow-md shadow-blue-900/20"
-                  : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
+                  : darkMode
+                    ? "text-slate-400 hover:bg-white/5 hover:text-slate-200"
+                    : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
               )
             }
           >
             {({ isActive }) => (
               <>
-                <item.icon 
-                  size={20} 
+                <item.icon
+                  size={20}
                   strokeWidth={2}
                   className={cn(
-                    "transition-colors", 
-                    isActive ? "text-white" : "text-slate-500 group-hover:text-slate-300"
+                    "transition-colors",
+                    isActive ? "text-white" : darkMode ? "text-slate-500 group-hover:text-slate-300" : "text-slate-400 group-hover:text-slate-600"
                   )}
                 />
                 <span className={cn(isActive ? "font-semibold" : "")}>{item.text}</span>
@@ -204,14 +215,16 @@ function App() {
       </nav>
 
       {/* 3. FOOTER */}
-      <div className="p-4 border-t border-zinc-900 bg-zinc-950/50">
+      <div className={cn("p-4 border-t", darkMode ? "border-zinc-900 bg-black/50" : "border-slate-200 bg-white/50")}>
         <NavLink
           to="/settings"
           onClick={() => setIsSheetOpen(false)}
           className={({ isActive }) =>
             cn(
               "flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium transition-colors mb-1",
-              isActive ? "bg-white/10 text-white" : "text-slate-500 hover:bg-white/5 hover:text-slate-200"
+              isActive
+                ? darkMode ? "bg-white/10 text-white" : "bg-slate-100 text-slate-900"
+                : darkMode ? "text-slate-500 hover:bg-white/5 hover:text-slate-200" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
             )
           }
         >
@@ -227,26 +240,26 @@ function App() {
   );
 
   return (
-    <div className="flex h-screen bg-muted/30 overflow-hidden font-sans selection:bg-blue-100 selection:text-blue-900">
+    <div className={cn("flex h-screen overflow-hidden font-sans transition-colors", darkMode ? "bg-[#0a0a0a] selection:bg-blue-900 selection:text-blue-100" : "bg-muted/30 selection:bg-blue-100 selection:text-blue-900")}>
       <GlobalShortcutListener />
-      <ToastContainer position="top-right" autoClose={2000} hideProgressBar theme="colored" />
+      <ToastContainer position="top-right" autoClose={2000} hideProgressBar theme={darkMode ? "dark" : "colored"} />
 
       {/* DESKTOP SIDEBAR */}
-      <aside className="hidden md:block w-72 flex-shrink-0 border-r border-slate-200/60 bg-zinc-950 z-20">
+      <aside className={cn("hidden md:block w-72 flex-shrink-0 border-r z-20 transition-colors", darkMode ? "border-slate-800/60 bg-[#0c0c0c]" : "border-slate-200/60 bg-[#f8f9fb]")}>
         <SidebarContent />
       </aside>
 
       {/* MOBILE HEADER & CONTENT */}
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-16 bg-white/80 backdrop-blur-md border-b border-slate-200/60 flex items-center justify-between px-6 flex-shrink-0 z-10 sticky top-0">
+        <header className={cn("h-16 backdrop-blur-md border-b flex items-center justify-between px-6 flex-shrink-0 z-10 sticky top-0 transition-colors", darkMode ? "bg-black/80 border-slate-800" : "bg-white/80 border-slate-200/60")}>
           <div className="flex items-center gap-4 w-full max-w-2xl">
             <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
               <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" className="md:hidden text-slate-600 -ml-2">
+                <Button variant="ghost" size="icon" className={cn("md:hidden -ml-2", darkMode ? "text-slate-400" : "text-slate-600")}>
                   <Menu size={20} />
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="p-0 w-72 border-r-zinc-800 bg-zinc-950 text-white border-none">
+              <SheetContent side="left" className={cn("p-0 w-72 border-none", darkMode ? "bg-[#0c0c0c] text-white" : "bg-[#f8f9fb] text-slate-800")}>
                 <SidebarContent />
               </SheetContent>
             </Sheet>
@@ -256,7 +269,7 @@ function App() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
               <Input
                 placeholder="Search anything... (Ctrl+K)"
-                className="pl-9 bg-slate-100/50 border-transparent focus:bg-white focus:border-blue-200 transition-all h-9 text-sm rounded-lg"
+                className={cn("pl-9 border-transparent transition-all h-9 text-sm rounded-lg", darkMode ? "bg-slate-900 text-slate-200 focus:bg-slate-800 focus:border-slate-600" : "bg-slate-100/50 focus:bg-white focus:border-blue-200")}
                 value={searchTerm}
                 onChange={handleSearch}
               />
@@ -264,57 +277,68 @@ function App() {
           </div>
 
           <div className="flex items-center gap-2">
-             <Sheet>
-               <SheetTrigger asChild>
-                 <Button variant="ghost" size="icon" className="relative text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-full h-9 w-9">
-                    <Bell size={18} />
-                    {notifications.length > 0 && (
-                      <span className="absolute top-2 right-2.5 h-2 w-2 bg-red-500 ring-2 ring-white rounded-full" />
-                    )}
-                 </Button>
-               </SheetTrigger>
-               <SheetContent side="right" className="w-full sm:max-w-sm p-0">
-                 <SheetHeader className="p-4 border-b">
-                   <SheetTitle className="flex items-center gap-2 text-base">
-                     <Bell size={16} className="text-blue-600"/> 
-                     Notifications
-                   </SheetTitle>
-                 </SheetHeader>
-                 
-                 <div className="p-4 space-y-3 overflow-y-auto h-[calc(100vh-80px)] bg-slate-50/50">
-                   {notifications.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center text-slate-400 py-12 gap-2 text-sm">
-                        <Bell size={32} className="opacity-10"/>
-                        <p>No new alerts</p>
+            {/* DARK MODE TOGGLE */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setDarkMode(!darkMode)}
+              className={cn("rounded-full h-9 w-9 transition-colors", darkMode ? "text-yellow-400 hover:bg-slate-800" : "text-slate-500 hover:text-slate-700 hover:bg-slate-100")}
+              title={darkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
+            >
+              {darkMode ? <Sun size={18} /> : <Moon size={18} />}
+            </Button>
+
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button variant="ghost" size="icon" className={cn("relative rounded-full h-9 w-9", darkMode ? "text-slate-400 hover:text-white hover:bg-slate-800" : "text-slate-500 hover:text-slate-700 hover:bg-slate-100")}>
+                  <Bell size={18} />
+                  {notifications.length > 0 && (
+                    <span className={cn("absolute top-2 right-2.5 h-2 w-2 bg-red-500 rounded-full ring-2", darkMode ? "ring-black" : "ring-white")} />
+                  )}
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="right" className="w-full sm:max-w-sm p-0">
+                <SheetHeader className="p-4 border-b">
+                  <SheetTitle className="flex items-center gap-2 text-base">
+                    <Bell size={16} className="text-blue-600" />
+                    Notifications
+                  </SheetTitle>
+                </SheetHeader>
+
+                <div className="p-4 space-y-3 overflow-y-auto h-[calc(100vh-80px)] bg-slate-50/50">
+                  {notifications.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center text-slate-400 py-12 gap-2 text-sm">
+                      <Bell size={32} className="opacity-10" />
+                      <p>No new alerts</p>
+                    </div>
+                  ) : (
+                    notifications.map(due => (
+                      <div key={due.id} className="group bg-white border border-slate-200 shadow-sm rounded-lg p-3 hover:shadow-md transition-all relative overflow-hidden">
+                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-red-500" />
+                        <div className="pl-3 flex justify-between items-start">
+                          <div>
+                            <div className="font-semibold text-sm text-slate-800">{due.name}</div>
+                            <div className="text-xs text-slate-500 flex items-center gap-1 mt-1">
+                              <Calendar size={10} /> Due: {new Date(due.next_payment_date).toLocaleDateString()}
+                            </div>
+                          </div>
+                          <Badge variant="destructive" className="h-5 px-1.5 text-[10px]">₹{due.balance}</Badge>
+                        </div>
+                        <div className="mt-3 pl-3">
+                          <Button size="sm" variant="outline" className="w-full h-7 text-xs border-slate-200" onClick={(e) => openSettle(due, e)}>
+                            Settle Balance
+                          </Button>
+                        </div>
                       </div>
-                   ) : (
-                     notifications.map(due => (
-                       <div key={due.id} className="group bg-white border border-slate-200 shadow-sm rounded-lg p-3 hover:shadow-md transition-all relative overflow-hidden">
-                          <div className="absolute left-0 top-0 bottom-0 w-1 bg-red-500" />
-                          <div className="pl-3 flex justify-between items-start">
-                             <div>
-                                <div className="font-semibold text-sm text-slate-800">{due.name}</div>
-                                <div className="text-xs text-slate-500 flex items-center gap-1 mt-1">
-                                   <Calendar size={10}/> Due: {new Date(due.next_payment_date).toLocaleDateString()}
-                                </div>
-                             </div>
-                             <Badge variant="destructive" className="h-5 px-1.5 text-[10px]">₹{due.balance}</Badge>
-                          </div>
-                          <div className="mt-3 pl-3">
-                             <Button size="sm" variant="outline" className="w-full h-7 text-xs border-slate-200" onClick={(e)=> openSettle(due, e)}>
-                               Settle Balance
-                             </Button>
-                          </div>
-                       </div>
-                     ))
-                   )}
-                 </div>
-               </SheetContent>
-             </Sheet>
-             
-             <Separator orientation="vertical" className="h-6 mx-1 bg-slate-200" />
-             
-             <AiAssistant />
+                    ))
+                  )}
+                </div>
+              </SheetContent>
+            </Sheet>
+
+            <Separator orientation="vertical" className={cn("h-6 mx-1", darkMode ? "bg-slate-700" : "bg-slate-200")} />
+
+            <AiAssistant />
           </div>
         </header>
 
@@ -357,47 +381,47 @@ function App() {
               Record payment for <span className="font-semibold text-foreground">{settleCustomer?.name}</span>.
             </DialogDescription>
           </DialogHeader>
-          
-          <div className="grid gap-4 py-4">
-             <div className="flex justify-between items-center bg-slate-50 p-4 rounded-lg border border-slate-100">
-                <span className="text-sm font-medium text-slate-500">Current Due</span>
-                <span className="font-mono font-bold text-red-600 text-lg">₹{settleCustomer?.balance}</span>
-             </div>
 
-             <div className="space-y-2">
-                <Label>Amount Collected</Label>
-                <div className="relative">
-                   <DollarSign className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                   <Input 
-                     type="number" 
-                     className="pl-9 font-bold text-lg h-11"
-                     placeholder="0.00"
-                     value={settleAmount}
-                     onChange={(e) => setSettleAmount(e.target.value)}
-                     autoFocus
-                   />
-                </div>
-             </div>
-             
-             {(settleCustomer?.balance - (Number(settleAmount)||0)) > 1 && (
-               <div className="space-y-2 animate-in fade-in slide-in-from-top-1">
-                  <Label className="text-blue-600 text-xs font-semibold uppercase">Next Reminder Date</Label>
-                  <Input 
-                    type="date" 
-                    value={settleDate}
-                    onChange={(e) => setSettleDate(e.target.value)}
-                    className="border-blue-200 focus-visible:ring-blue-500"
-                  />
-                  <p className="text-[10px] text-slate-400">Required because a balance remains.</p>
-               </div>
-             )}
+          <div className="grid gap-4 py-4">
+            <div className="flex justify-between items-center bg-slate-50 p-4 rounded-lg border border-slate-100">
+              <span className="text-sm font-medium text-slate-500">Current Due</span>
+              <span className="font-mono font-bold text-red-600 text-lg">₹{settleCustomer?.balance}</span>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Amount Collected</Label>
+              <div className="relative">
+                <DollarSign className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                <Input
+                  type="number"
+                  className="pl-9 font-bold text-lg h-11"
+                  placeholder="0.00"
+                  value={settleAmount}
+                  onChange={(e) => setSettleAmount(e.target.value)}
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            {(settleCustomer?.balance - (Number(settleAmount) || 0)) > 1 && (
+              <div className="space-y-2 animate-in fade-in slide-in-from-top-1">
+                <Label className="text-blue-600 text-xs font-semibold uppercase">Next Reminder Date</Label>
+                <Input
+                  type="date"
+                  value={settleDate}
+                  onChange={(e) => setSettleDate(e.target.value)}
+                  className="border-blue-200 focus-visible:ring-blue-500"
+                />
+                <p className="text-[10px] text-slate-400">Required because a balance remains.</p>
+              </div>
+            )}
           </div>
 
           <DialogFooter>
-             <Button variant="outline" onClick={() => setSettleOpen(false)}>Cancel</Button>
-             <Button onClick={handleConfirmSettle} className="bg-green-600 hover:bg-green-700 w-full sm:w-auto">
-                Confirm Payment
-             </Button>
+            <Button variant="outline" onClick={() => setSettleOpen(false)}>Cancel</Button>
+            <Button onClick={handleConfirmSettle} className="bg-green-600 hover:bg-green-700 w-full sm:w-auto">
+              Confirm Payment
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

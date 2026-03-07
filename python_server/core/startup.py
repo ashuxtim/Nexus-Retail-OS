@@ -173,6 +173,10 @@ def initialize_ai():
             cursor.execute("PRAGMA busy_timeout=5000")
             cursor.close()
 
+        # 1b. Ensure DB indexes for fast name lookups
+        from core.indexes import ensure_indexes
+        ensure_indexes(state.raw_engine)
+
         # 2. Analytics & Vector Store
         try:
             state.analytics_engine = AnalyticsEngine(state.raw_engine, state.BASE_DIR)
@@ -202,9 +206,13 @@ def initialize_ai():
 
         if groq_key:
             try:
-                state.agent_executor, state.safety_guard = build_nexus_agent(
+                from ai_engine.safety import SafetyGuard
+
+                agent, router_llm = build_nexus_agent(
                     state.raw_engine, groq_key
                 )
+                state.agent_executor = agent
+                state.safety_guard = SafetyGuard(router_llm) if router_llm else None
                 logger.info("✅ AI Agent Online")
             except Exception as e:
                 logger.error(f"Agent Build Failed: {e}")

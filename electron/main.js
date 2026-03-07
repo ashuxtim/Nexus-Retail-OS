@@ -1,8 +1,9 @@
-const { app, BrowserWindow, ipcMain, session, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, session, dialog, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn, execSync } = require('child_process');
 const { Blob } = require('buffer');
+const crypto = require('crypto');
 
 const { autoUpdater } = require('electron-updater');
 const log = require('electron-log');
@@ -29,6 +30,65 @@ const SettingsRepo = require('./database/repositories/SettingsRepository');
 const appFolderName = "NexusRetailOS";
 const customPath = path.join(app.getPath('appData'), appFolderName);
 app.setPath('userData', customPath);
+
+// ==========================================
+// ENCRYPTION KEY BOOTSTRAP (safeStorage)
+// ==========================================
+
+/**
+ * On first run: generates a cryptographically random 32-byte key,
+ * encrypts it with the OS credential store (safeStorage), and saves
+ * the encrypted blob to a file in userData.
+ *
+ * On subsequent runs: reads the encrypted blob and decrypts it.
+ *
+ * The decrypted key Buffer is passed to SettingsRepository so it
+ * never needs to hardcode or store the key in plaintext.
+ */
+function initEncryptionKey() {
+  const keyFilePath = path.join(app.getPath('userData'), '.nexus_vault');
+
+  if (!safeStorage.isEncryptionAvailable()) {
+    // Fallback: derive a key from a machine-specific ID (less secure but better than hardcoded)
+    console.warn('⚠️  safeStorage unavailable — falling back to machine-id derived key');
+    const os = require('os');
+    const machineId = `${os.hostname()}-${os.platform()}-${os.arch()}`;
+    const fallbackKey = crypto.createHash('sha256').update(machineId).digest();
+    SettingsRepo.setEncryptionKey(fallbackKey);
+    return;
+  }
+
+  let rawKey;
+
+  if (fs.existsSync(keyFilePath)) {
+    // Subsequent runs: decrypt the stored blob
+    try {
+      const encryptedBlob = fs.readFileSync(keyFilePath);
+      rawKey = safeStorage.decryptString(encryptedBlob);
+    } catch (e) {
+      console.error('❌ Failed to read vault key — regenerating:', e.message);
+      rawKey = null;
+    }
+  }
+
+  if (!rawKey || rawKey.length !== 64) {
+    // First run (or corrupted file): generate a fresh 32-byte key, store as 64-char hex
+    const newKey = crypto.randomBytes(32);
+    rawKey = newKey.toString('hex');
+    const encryptedBlob = safeStorage.encryptString(rawKey);
+    try {
+      fs.mkdirSync(path.dirname(keyFilePath), { recursive: true });
+      fs.writeFileSync(keyFilePath, encryptedBlob);
+      console.log('🔑 New vault key generated and stored securely.');
+    } catch (e) {
+      console.error('❌ Failed to persist vault key:', e.message);
+    }
+  }
+
+  const keyBuffer = Buffer.from(rawKey, 'hex');
+  SettingsRepo.setEncryptionKey(keyBuffer);
+  console.log('🔒 Encryption key initialized from secure OS storage.');
+}
 
 // --- Global State ---
 let mainWindow;
@@ -286,6 +346,9 @@ function createWindow() {
 // Inside app.whenReady()
 app.whenReady().then(() => {
   try {
+    // 0. INIT ENCRYPTION KEY (must happen before any DB reads)
+    initEncryptionKey();
+
     // 1. RUN MIGRATIONS (Native JS)
     // This is synchronous. If it fails, it throws an error.
     const migrationSuccess = runMigrations();
@@ -389,7 +452,7 @@ function setupAutoUpdater() {
 // Helper for Python Requests
 const fetchPython = async (endpoint, method = 'GET', body = null) => {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 35000);
+  const timeoutId = setTimeout(() => controller.abort(), 65000);
   try {
     // CACHE BUSTING: Append timestamp to prevent Electron/Chromium from caching local GET requests
     const separator = endpoint.includes('?') ? '&' : '?';
@@ -407,7 +470,7 @@ const fetchPython = async (endpoint, method = 'GET', body = null) => {
     return await response.json();
   } catch (err) {
     if (err.name === 'AbortError') {
-      return { status: "Inactive", error: "Request timed out (35s)", error_type: "timeout" };
+      return { status: "Inactive", error: "Request timed out (65s)", error_type: "timeout" };
     }
     return { status: "Inactive", error: err.message };
   } finally {
@@ -531,7 +594,7 @@ ipcMain.handle('dashboard:get-stats', () => {
         p.category
       FROM product_variant v 
       JOIN product p ON v.product_id = p.id 
-      WHERE v.current_stock >= 0
+      WHERE v.current_stock <= 10
       ORDER BY v.current_stock ASC
       LIMIT 50
     `).all()

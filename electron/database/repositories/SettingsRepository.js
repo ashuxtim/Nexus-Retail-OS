@@ -1,15 +1,36 @@
 const { getDB } = require('../db_manager');
 const crypto = require('crypto');
 
-// 🔒 SECURITY CONFIGURATION
-const ENCRYPTION_KEY = 'vOVH6sdmpNWjRRIqCc7rdxs01lwHzfr3'; 
-const IV_LENGTH = 16; 
+// 🔒 SECURITY: Key is NOT hardcoded. It is injected at startup by main.js
+// via setEncryptionKey(), which retrieves a machine-specific key from
+// Electron's safeStorage (OS keychain / credential store).
+let ENCRYPTION_KEY = null;
+const IV_LENGTH = 16;
+
+/**
+ * Called once by main.js after safeStorage has retrieved the machine key.
+ * Must be called before any get/set/getAll operations.
+ * @param {Buffer} keyBuffer - 32-byte Buffer
+ */
+function setEncryptionKey(keyBuffer) {
+  if (!Buffer.isBuffer(keyBuffer) || keyBuffer.length !== 32) {
+    throw new Error('SettingsRepository: encryption key must be a 32-byte Buffer');
+  }
+  ENCRYPTION_KEY = keyBuffer;
+}
+
+function getKey() {
+  if (!ENCRYPTION_KEY) {
+    throw new Error('SettingsRepository: encryption key not initialized. Call setEncryptionKey() first.');
+  }
+  return ENCRYPTION_KEY;
+}
 
 function encrypt(text) {
   if (!text) return text;
   try {
     const iv = crypto.randomBytes(IV_LENGTH);
-    const cipher = crypto.createCipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY), iv);
+    const cipher = crypto.createCipheriv('aes-256-cbc', getKey(), iv);
     let encrypted = cipher.update(JSON.stringify(text));
     encrypted = Buffer.concat([encrypted, cipher.final()]);
     return iv.toString('hex') + ':' + encrypted.toString('hex');
@@ -28,7 +49,7 @@ function decrypt(text) {
     }
     const iv = Buffer.from(textParts.shift(), 'hex');
     const encryptedText = Buffer.from(textParts.join(':'), 'hex');
-    const decipher = crypto.createDecipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY), iv);
+    const decipher = crypto.createDecipheriv('aes-256-cbc', getKey(), iv);
     let decrypted = decipher.update(encryptedText);
     decrypted = Buffer.concat([decrypted, decipher.final()]);
     return JSON.parse(decrypted.toString());
@@ -39,6 +60,8 @@ function decrypt(text) {
 }
 
 module.exports = {
+  setEncryptionKey,
+
   get(key) {
     const row = getDB().prepare('SELECT setting_value FROM app_settings WHERE setting_key = ?').get(key);
     if (!row) return null;
@@ -49,8 +72,8 @@ module.exports = {
     const rows = getDB().prepare('SELECT * FROM app_settings').all();
     const settings = {};
     rows.forEach(r => {
-        const val = decrypt(r.setting_value);
-        if (val !== null) settings[r.setting_key] = val;
+      const val = decrypt(r.setting_value);
+      if (val !== null) settings[r.setting_key] = val;
     });
     return settings;
   },

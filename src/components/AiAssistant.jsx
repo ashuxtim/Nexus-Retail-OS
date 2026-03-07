@@ -1,110 +1,105 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { useLocation } from 'react-router-dom';
-import { Send, Mic, StopCircle, Bot, Sparkles, Loader2, X, RefreshCw, Volume2, TrendingUp, AlertTriangle, Users, BookOpen, Package, ShoppingCart, CheckCircle2, XCircle, Clock, Zap } from 'lucide-react';
+import { Send, Mic, StopCircle, Bot, Sparkles, Loader2, RefreshCw, Volume2, TrendingUp, AlertTriangle, Users, Package, ShoppingCart, Zap, BarChart3, Search } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 
-// --- CONTEXT AWARE SUGGESTIONS ---
+// --- CONTEXT AWARE SUGGESTIONS (analytics-only) ---
 const getSuggestions = (pathname) => {
     switch (pathname) {
+        case '/':
+            return [
+                { label: "Today's Sales Summary", icon: BarChart3, query: "Today's sales" },
+                { label: "Low Stock Alert", icon: AlertTriangle, query: "Low stock items" },
+                { label: "Check Churn Risk", icon: Users, query: "Check churn risk" }
+            ];
         case '/sales':
             return [
-                { label: "Suggest Upsell", icon: ShoppingCart, query: "What usually sells well with Milk?" },
-                { label: "Check Customer Credit", icon: Users, query: "Does this customer have pending dues?" }
+                { label: "Today's Revenue", icon: TrendingUp, query: "Today's sales" },
+                { label: "Top 5 Customers", icon: Users, query: "Top 5 customers" },
+                { label: "Recent Sales", icon: ShoppingCart, query: "Recent sales" }
             ];
         case '/products':
             return [
-                { label: "Analyze Stock", icon: Package, query: "Which items are overstocked?" },
-                { label: "Identify Low Stock", icon: AlertTriangle, query: "Show me items running low" }
+                { label: "Low Stock Items", icon: AlertTriangle, query: "Low stock items" },
+                { label: "Out of Stock", icon: Package, query: "Out of stock" },
+                { label: "Top Selling Products", icon: TrendingUp, query: "Top 5 products" }
             ];
         case '/customers':
         case '/ledger':
             return [
-                { label: "Top Debtors", icon: BookOpen, query: "Who owes the most money?" },
-                { label: "Draft Reminder", icon: Send, query: "Draft a payment reminder message" }
+                { label: "All Customers", icon: Search, query: "All customers" },
+                { label: "Top Customers", icon: Users, query: "Top customers" },
+                { label: "Recent Sales", icon: ShoppingCart, query: "Recent sales" }
             ];
         default:
             return [
-                { label: "Forecast Sales", icon: TrendingUp, query: "Forecast sales for next month" },
-                { label: "Business Health", icon: Sparkles, query: "How is my business doing overall?" },
-                { label: "Check Churn", icon: Users, query: "Check churn risk" }
+                { label: "Quick Summary", icon: Zap, query: "Quick summary" },
+                { label: "Market Basket Insights", icon: ShoppingCart, query: "Market basket insights" },
+                { label: "Monthly Revenue", icon: TrendingUp, query: "Monthly revenue" }
             ];
     }
 };
 
-// --- SIMPLE MARKDOWN RENDERER ---
+// --- RICH MARKDOWN RENDERER (react-markdown + remark-gfm) ---
 const RenderMarkdown = ({ text }) => {
-    const lines = text.split('\n');
-    return lines.map((line, i) => {
-        // Bold: **text**
-        let processed = line.replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold text-white">$1</strong>');
-        // Bullet points
-        const isBullet = line.trimStart().startsWith('-') || line.trimStart().startsWith('•');
-
-        return (
-            <p
-                key={i}
-                className={cn(
-                    "min-h-[1.2em] leading-relaxed",
-                    isBullet && "ml-3 text-slate-300"
-                )}
-                dangerouslySetInnerHTML={{ __html: processed }}
-            />
-        );
-    });
-};
-
-const INITIAL_MESSAGE = { role: 'assistant', text: "Hello! I'm Nexus AI. I can analyze your database, predict sales, or manage inventory. How can I help?" };
-
-const DisambiguationCard = ({ options, action, onSelect, onCancel, isLatest }) => {
-    const [selectedIndex, setSelectedIndex] = useState(0);
-
-    useEffect(() => {
-        if (!isLatest) return;
-        const handler = (e) => {
-            if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
-            if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedIndex(prev => Math.min(options.length - 1, prev + 1)); }
-            if (e.key === 'ArrowUp') { e.preventDefault(); setSelectedIndex(prev => Math.max(0, prev - 1)); }
-            if (e.key === 'Enter') { e.preventDefault(); onSelect(options[selectedIndex]); }
-            const num = parseInt(e.key);
-            if (!isNaN(num) && num > 0 && num <= options.length) {
-                e.preventDefault();
-                onSelect(options[num - 1]);
-            }
-        };
-        window.addEventListener('keydown', handler);
-        return () => window.removeEventListener('keydown', handler);
-    }, [isLatest, options, selectedIndex, onSelect, onCancel]);
-
     return (
-        <div className="flex flex-col gap-2 mt-3 animate-in fade-in slide-in-from-top-2 w-full min-w-[280px]">
-            {options.map((opt, i) => (
-                <button
-                    key={i}
-                    onClick={() => { if (isLatest) onSelect(opt); }}
-                    className={cn(
-                        "w-full text-left p-3 rounded-lg border flex items-center justify-between transition-all",
-                        selectedIndex === i && isLatest ? "bg-blue-900/40 border-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.2)] shadow-inner" : "bg-slate-800/50 border-slate-700 hover:border-slate-500 hover:bg-slate-800 opacity-90"
-                    )}
-                    disabled={!isLatest}
-                >
-                    <span className="text-sm font-medium text-slate-200">{i + 1}. {opt}</span>
-                    {selectedIndex === i && isLatest && <span className="text-[10px] text-blue-400 font-bold bg-blue-950 border border-blue-900 px-2 py-0.5 rounded shadow-sm">ENTER</span>}
-                </button>
-            ))}
-            {isLatest && (
-                <div className="flex justify-between items-center mt-2 px-1">
-                    <Button size="sm" variant="ghost" onClick={onCancel} className="h-8 text-[11px] text-slate-400 hover:text-red-400 hover:bg-slate-800"><X size={12} className="mr-1" /> Cancel</Button>
-                    <span className="text-[10px] text-slate-500 font-medium">Use ↑↓ or 1-{options.length}</span>
-                </div>
-            )}
-        </div>
+        <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={{
+                h1: ({ children }) => <h2 className="text-base font-bold text-white mt-3 mb-1.5 pb-1 border-b border-white/10">{children}</h2>,
+                h2: ({ children }) => <h3 className="text-sm font-bold text-white mt-3 mb-1">{children}</h3>,
+                h3: ({ children }) => <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider mt-2.5 mb-1">{children}</h4>,
+                p: ({ children }) => <p className="text-slate-300 text-[13px] leading-relaxed mb-1.5">{children}</p>,
+                strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
+                em: ({ children }) => <em className="text-slate-400 italic">{children}</em>,
+                ul: ({ children }) => <ul className="space-y-0.5 ml-1 my-1">{children}</ul>,
+                ol: ({ children }) => <ol className="space-y-0.5 ml-1 my-1 list-none">{children}</ol>,
+                li: ({ children, ordered, index }) => (
+                    <li className="flex gap-2 py-0.5">
+                        <span className={cn(
+                            "mt-0.5 min-w-[14px] text-xs font-bold flex-shrink-0",
+                            ordered ? "text-emerald-400" : "text-slate-500 text-[6px] mt-1.5"
+                        )}>
+                            {ordered ? `${(index ?? 0) + 1}.` : "●"}
+                        </span>
+                        <span className="text-slate-300 text-[13px] leading-relaxed flex-1">{children}</span>
+                    </li>
+                ),
+                code: ({ inline, children }) => inline ? (
+                    <code className="px-1 py-0.5 rounded bg-white/10 text-emerald-300 text-[11px] font-mono">{children}</code>
+                ) : (
+                    <pre className="bg-black/30 rounded-md p-2.5 my-1.5 overflow-x-auto border border-white/5">
+                        <code className="text-emerald-300 text-[11px] font-mono leading-relaxed">{children}</code>
+                    </pre>
+                ),
+                hr: () => <hr className="border-white/10 my-2.5" />,
+                a: ({ href, children }) => <a href={href} className="text-blue-400 hover:text-blue-300 underline underline-offset-2" target="_blank" rel="noopener noreferrer">{children}</a>,
+                table: ({ children }) => (
+                    <div className="overflow-x-auto my-2 rounded-md border border-white/10">
+                        <table className="w-full text-[11px]">{children}</table>
+                    </div>
+                ),
+                thead: ({ children }) => <thead className="bg-white/5">{children}</thead>,
+                th: ({ children }) => <th className="px-2 py-1.5 text-left text-xs font-semibold text-slate-300 border-b border-white/10">{children}</th>,
+                td: ({ children }) => <td className="px-2 py-1 text-slate-400 border-b border-white/5">{children}</td>,
+                tr: ({ children }) => <tr className="hover:bg-white/5 transition-colors">{children}</tr>,
+                blockquote: ({ children }) => (
+                    <blockquote className="border-l-2 border-emerald-500/50 pl-3 my-1.5 text-slate-400 italic">{children}</blockquote>
+                ),
+            }}
+        >
+            {text}
+        </ReactMarkdown>
     );
 };
+
+const INITIAL_MESSAGE = { role: 'assistant', text: "👋 Hey! I'm your **Nexus Business AI**. Here's what I can do:\n\n📊 **Sales & Revenue** — Trends, comparisons, top sellers\n👥 **Customer Intel** — Segments, churn risk, loyalty\n📦 **Inventory** — Stock velocity, restocking alerts, dead stock\n🛒 **Growth Strategy** — Market basket, cross-sell opportunities\n\nTry asking: *\"How can I increase my sales?\"* or *\"What should I restock?\"*" };
 
 export default function AiAssistant() {
     const [isOpen, setIsOpen] = useState(false);
@@ -118,27 +113,9 @@ export default function AiAssistant() {
     const messagesEndRef = useRef(null);
     const mediaRecorderRef = useRef(null);
     const audioChunksRef = useRef([]);
-    const confirmBtnRef = useRef(null);
     const inputRef = useRef(null);
 
     useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, isOpen, processingStep]);
-
-    // --- KEYBOARD: Enter=Confirm, Escape=Cancel ---
-    const lastMessage = messages[messages.length - 1];
-    const showConfirmation = lastMessage?.role === 'assistant' && isConfirmationRequest(lastMessage?.text) && processingStep === 'idle';
-
-    useEffect(() => {
-        if (!showConfirmation) return;
-        // Auto-focus confirm button
-        setTimeout(() => confirmBtnRef.current?.focus(), 100);
-
-        const handler = (e) => {
-            if (e.key === 'Enter') { e.preventDefault(); handleConfirm(); }
-            if (e.key === 'Escape') { e.preventDefault(); handleCancel(); }
-        };
-        window.addEventListener('keydown', handler);
-        return () => window.removeEventListener('keydown', handler);
-    }, [showConfirmation]);
 
     // --- LOGIC: CLOSE & RESET ---
     const handleClose = (open) => {
@@ -164,7 +141,6 @@ export default function AiAssistant() {
         if (text.includes('⏳') || text.includes('rate limit')) return 'rate_limit';
         if (text.includes('⏱️') || text.includes('timed out')) return 'timeout';
         if (text.startsWith('❌') || text.includes('Error:')) return 'error';
-        if (text.includes('Confirmation Required')) return 'confirmation';
         if (text.startsWith('✅')) return 'success';
         if (text.startsWith('🚫')) return 'cancelled';
         return 'normal';
@@ -187,24 +163,12 @@ export default function AiAssistant() {
             const data = await window.api.askAI(text);
             if (data.error) throw new Error(data.error);
 
-            if (data.type === 'disambiguation') {
-                setMessages([...currentMessages, {
-                    role: 'assistant',
-                    type: 'disambiguation',
-                    text: `⚠️ **${data.message || "Multiple matches found."}**`,
-                    options: data.options,
-                    action: data.original_action
-                }]);
-                setProcessingStep('idle');
-            } else {
-                const aiReply = data.answer || "Sorry, I couldn't process that.";
-                const errorType = data.error_type || null;
-                setMessages([...currentMessages, { role: 'assistant', text: aiReply, errorType }]);
-                speakResponse(aiReply);
-            }
+            const aiReply = data.answer || "Sorry, I couldn't process that.";
+            const errorType = data.error_type || null;
+            setMessages([...currentMessages, { role: 'assistant', text: aiReply, errorType }]);
+            setProcessingStep('idle');
         } catch (err) {
             const errMsg = err.message || "Connection failed";
-            // Surface the actual error, not a generic message
             let friendlyMsg;
             if (errMsg.includes('rate limit') || errMsg.includes('429')) {
                 friendlyMsg = "⏳ API rate limit reached. Please wait about a minute.";
@@ -218,10 +182,6 @@ export default function AiAssistant() {
             setMessages([...currentMessages, { role: 'assistant', text: friendlyMsg, errorType: 'error' }]);
             setProcessingStep('idle');
         }
-    };
-
-    const speakResponse = (text) => {
-        setProcessingStep('idle');
     };
 
     // --- LOGIC: VOICE ---
@@ -276,13 +236,6 @@ export default function AiAssistant() {
         }
     };
 
-    const handleConfirm = useCallback(() => { processAiRequest('YES', [...messages, { role: 'user', text: 'YES' }]); }, [messages]);
-    const handleCancel = useCallback(() => { processAiRequest('NO', [...messages, { role: 'user', text: 'NO' }]); }, [messages]);
-
-    function isConfirmationRequest(text) {
-        return text && (text.includes("Confirmation Required") || text.includes("Are you sure?"));
-    }
-
     // --- RENDER ---
     return (
         <>
@@ -302,7 +255,7 @@ export default function AiAssistant() {
 
             {/* SLIDE-OVER SHEET (Midnight Theme) */}
             <Sheet open={isOpen} onOpenChange={handleClose}>
-                <SheetContent className="w-[400px] sm:w-[450px] p-0 border-l border-slate-800 bg-slate-950 text-slate-100 flex flex-col shadow-2xl">
+                <SheetContent className="w-[440px] sm:w-[500px] p-0 border-l border-slate-800 bg-slate-950 text-slate-100 flex flex-col shadow-2xl">
 
                     {/* HEADER */}
                     <SheetHeader className="p-4 border-b border-slate-800 bg-slate-950 sticky top-0 z-10">
@@ -352,73 +305,11 @@ export default function AiAssistant() {
                                                     msgType === 'error' && "bg-red-950/50 border border-red-800/50 text-red-200",
                                                     msgType === 'success' && "bg-emerald-950/50 border border-emerald-800/50 text-emerald-200",
                                                     msgType === 'cancelled' && "bg-slate-900 border border-slate-700 text-slate-400",
-                                                    msgType === 'confirmation' && "bg-slate-900 border border-cyan-800/40 text-slate-200",
                                                     msgType === 'normal' && "bg-slate-900 border border-slate-800 text-slate-200"
                                                 )
                                         )}>
-                                            {/* Status icon for special messages */}
-                                            {msgType === 'rate_limit' && (
-                                                <div className="flex items-center gap-2 mb-2 pb-2 border-b border-amber-800/30">
-                                                    <Clock size={14} className="text-amber-400" />
-                                                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400">Rate Limited</span>
-                                                </div>
-                                            )}
-                                            {msgType === 'timeout' && (
-                                                <div className="flex items-center gap-2 mb-2 pb-2 border-b border-amber-800/30">
-                                                    <Clock size={14} className="text-amber-400" />
-                                                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400">Timed Out</span>
-                                                </div>
-                                            )}
-                                            {msgType === 'error' && (
-                                                <div className="flex items-center gap-2 mb-2 pb-2 border-b border-red-800/30">
-                                                    <XCircle size={14} className="text-red-400" />
-                                                    <span className="text-[10px] font-bold uppercase tracking-wider text-red-400">Error</span>
-                                                </div>
-                                            )}
-
                                             <RenderMarkdown text={msg.text} />
-
-                                            {msg.type === 'disambiguation' && (
-                                                <DisambiguationCard
-                                                    options={msg.options}
-                                                    action={msg.action}
-                                                    isLatest={idx === messages.length - 1 && processingStep === 'idle'}
-                                                    onSelect={(selected) => {
-                                                        const confirmText = `CONFIRMED: ${msg.action} — specifically '${selected}'`;
-                                                        const newMsgs = [...messages, { role: 'user', text: confirmText }];
-                                                        setMessages(newMsgs);
-                                                        processAiRequest(confirmText, newMsgs);
-                                                    }}
-                                                    onCancel={() => {
-                                                        const cancelMsg = "🚫 Action cancelled.";
-                                                        setMessages([...messages, { role: 'assistant', text: cancelMsg, errorType: 'cancelled' }]);
-                                                    }}
-                                                />
-                                            )}
                                         </div>
-
-                                        {/* CONFIRMATION BUTTONS */}
-                                        {msg.role === 'assistant' && idx === messages.length - 1 && isConfirmationRequest(msg.text) && processingStep === 'idle' && (
-                                            <div className="flex gap-2 mt-3 animate-in fade-in slide-in-from-top-2">
-                                                <Button
-                                                    ref={confirmBtnRef}
-                                                    size="sm"
-                                                    className="bg-green-600 hover:bg-green-700 text-white h-9 gap-1.5 px-4 shadow-lg shadow-green-900/20"
-                                                    onClick={handleConfirm}
-                                                >
-                                                    <CheckCircle2 size={14} /> Confirm
-                                                </Button>
-                                                <Button
-                                                    size="sm"
-                                                    variant="outline"
-                                                    className="h-9 text-slate-400 border-slate-700 hover:bg-slate-800 hover:text-red-400 gap-1.5 px-4"
-                                                    onClick={handleCancel}
-                                                >
-                                                    <XCircle size={14} /> Cancel
-                                                </Button>
-                                                <span className="text-[10px] text-slate-600 self-center ml-1">Enter / Esc</span>
-                                            </div>
-                                        )}
                                     </div>
                                 )
                             })}

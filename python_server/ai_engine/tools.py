@@ -1,6 +1,5 @@
 # FILE: python_server/ai_engine/tools.py
 
-import re
 from sqlalchemy import text
 from langchain_core.tools import tool
 
@@ -20,109 +19,6 @@ def set_context(engine, search_engine_ref, analytics_cache_ref):
     SEARCH_ENGINE = search_engine_ref
     ANALYTICS_CACHE = analytics_cache_ref
     print("✅ AI Tools Context Loaded.")
-
-
-# --- HELPER FUNCTIONS ---
-
-
-def clean_number(val):
-    if isinstance(val, (int, float)):
-        return float(val)
-    clean = re.sub(r"[^0-9.]", "", str(val))
-    try:
-        return float(clean)
-    except:
-        return 0.0
-
-
-def get_safe_match(conn, table, name_col, search_name):
-    """
-    Smart matching logic to prevent accidental deletions.
-    1. Try EXACT match (case insensitive).
-    2. If not found, try LIKE match.
-    3. If multiple found, ERROR out.
-    4. SIBLING CHECK: Even after finding a unique match, check if other records
-       share the same name prefix — prevents the LLM from resolving ambiguity silently.
-    """
-    # 1. Exact Match
-    exact = conn.execute(
-        text(
-            f"SELECT id, {name_col} FROM {table} WHERE LOWER({name_col}) = LOWER(:name)"
-        ),
-        {"name": search_name},
-    ).fetchall()
-
-    if len(exact) == 1:
-        matched_id, matched_name = exact[0]
-        # Sibling check: are there others with a similar prefix?
-        siblings = _find_siblings(conn, table, name_col, matched_name, matched_id)
-        if siblings:
-            all_names = [matched_name] + [s[1] for s in siblings]
-            numbered = '\n'.join([f'  {i+1}. {n}' for i, n in enumerate(all_names)])
-            raise ValueError(
-                f"AMBIGUOUS — {len(all_names)} matching records found:\n{numbered}\nAsk the user which one they mean."
-            )
-        return matched_id
-
-    if len(exact) > 1:
-        names = ", ".join([r[1] for r in exact])
-        raise ValueError(f"Ambiguous exact match. Found multiple: {names}")
-
-    # 2. Fuzzy/Like Match — word-boundary prefix ("raj" matches "Raj Kumar" but NOT "Rajesh")
-    fuzzy = conn.execute(
-        text(
-            f"SELECT id, {name_col} FROM {table} "
-            f"WHERE LOWER({name_col}) LIKE LOWER(:prefix) "
-            f"OR LOWER({name_col}) LIKE LOWER(:word_prefix)"
-        ),
-        {"prefix": f"{search_name}%", "word_prefix": f"% {search_name}%"},
-    ).fetchall()
-
-    if len(fuzzy) == 0:
-        raise ValueError(f"No {table} found matching '{search_name}'")
-
-    if len(fuzzy) > 1:
-        numbered = '\n'.join([f'  {i+1}. {n}' for i, (_, n) in enumerate(fuzzy[:10])])
-        raise ValueError(
-            f"AMBIGUOUS — {len(fuzzy)} matching records found:\n{numbered}\nAsk the user which one they mean."
-        )
-
-    # Single fuzzy match — still do sibling check
-    matched_id, matched_name = fuzzy[0]
-    siblings = _find_siblings(conn, table, name_col, matched_name, matched_id)
-    if siblings:
-        all_names = [matched_name] + [s[1] for s in siblings]
-        numbered = '\n'.join([f'  {i+1}. {n}' for i, n in enumerate(all_names)])
-        raise ValueError(
-            f"AMBIGUOUS — {len(all_names)} matching records found:\n{numbered}\nAsk the user which one they mean."
-        )
-    return matched_id
-
-
-def _find_siblings(conn, table, name_col, matched_name, matched_id):
-    """
-    Check if other records share a common name prefix with the matched record.
-    E.g., 'Rahul Kumar Oraon' and 'Rahul Kumar Kol' share 'Rahul Kumar'.
-    """
-    words = matched_name.strip().split()
-    if len(words) < 2:
-        return []
-
-    # Build prefix from first N-1 words (e.g., "Rahul Kumar" from "Rahul Kumar Oraon")
-    prefix = " ".join(words[:-1])
-    if len(prefix) < 3:
-        return []
-
-    siblings = conn.execute(
-        text(
-            f"SELECT id, {name_col} FROM {table} "
-            f"WHERE (LOWER({name_col}) LIKE LOWER(:prefix) OR LOWER({name_col}) LIKE LOWER(:word_prefix)) "
-            f"AND id != :id"
-        ),
-        {"prefix": f"{prefix}%", "word_prefix": f"% {prefix}%", "id": matched_id},
-    ).fetchall()
-    return siblings
-
 
 
 # --- SEARCH & ANALYTICS TOOLS ---
@@ -164,417 +60,524 @@ def search_supplier_tool(search_term: str):
 @tool
 def check_churn_risk_tool():
     """Identifies customers at risk of leaving using cached ML predictions."""
-    if not ANALYTICS_CACHE or not ANALYTICS_CACHE.get("churn_risk"):
-        return "✨ No immediate churn risks detected or analytics pending."
+    try:
+        from analytics import AnalyticsEngine
+        from core import state as _state
+        analytics = AnalyticsEngine(_state.raw_engine, base_dir=_state.BASE_DIR)
+        dashboard = analytics.get_dashboard_metrics()
+        dash_data = dashboard.get("data", dashboard)
+        risks = dash_data.get("churn_risk", [])
+    except Exception:
+        risks = ANALYTICS_CACHE.get("churn_risk", [])
 
-    risks = ANALYTICS_CACHE.get("churn_risk", [])
     if not risks:
         return "✨ No immediate churn risks detected."
 
-    sorted_risks = sorted(risks, key=lambda x: x["risk_score"], reverse=True)
+    sorted_risks = sorted(risks, key=lambda x: x.get("risk_score", 0), reverse=True)
     report = f"🤖 **AI Churn Report (Total At-Risk: {len(sorted_risks)}):**\n\n"
     for r in sorted_risks[:15]:
-        report += f"🔴 **{r.get('name', 'Unknown')}** (Risk: {r['risk_score']}%)\n"
-        report += f"   Reason: {r['trend']} • Inactive: {r['days_inactive']} days\n\n"
+        report += f"🔴 **{r.get('name', 'Unknown')}** (Risk: {r.get('risk_score', 0)}%)\n"
+        report += f"   Reason: {r.get('trend', 'N/A')} • Inactive: {r.get('days_inactive', 0)} days\n\n"
     return report
 
 
 @tool
 def get_market_insights_tool():
     """Returns 'Market Basket' patterns (e.g. Bread goes with Milk)."""
-    if not ANALYTICS_CACHE:
-        return "Analytics not initialized."
-    return f"🛒 **Shopping Patterns:**\n{ANALYTICS_CACHE.get('market_basket', 'Analysis pending...')}"
+    try:
+        from analytics import AnalyticsEngine
+        from core import state as _state
+        analytics = AnalyticsEngine(_state.raw_engine, base_dir=_state.BASE_DIR)
+        dashboard = analytics.get_dashboard_metrics()
+        dash_data = dashboard.get("data", dashboard)
+        mb = dash_data.get("market_basket", {})
+        if isinstance(mb, dict) and mb.get("rules"):
+            rules = mb["rules"][:10]
+            lines = []
+            for i, r in enumerate(rules, 1):
+                ant = r.get('antecedent', ['?'])
+                con = r.get('consequent', ['?'])
+                ant_str = ant[0] if isinstance(ant, list) else str(ant).strip("[]'")
+                con_str = con[0] if isinstance(con, list) else str(con).strip("[]'")
+                lines.append(f"{i}. Customers who buy **{ant_str}** often also buy **{con_str}**")
+            return f"🛒 **Shopping Patterns — What sells together:**\n\n" + "\n".join(lines) + "\n\n💡 *Place these products near each other to boost sales!*"
+        return "🛒 Market basket analysis pending..."
+    except Exception:
+        return f"🛒 **Shopping Patterns:**\n{ANALYTICS_CACHE.get('market_basket', 'Analysis pending...')}"
 
 
-# --- CUSTOMER CRUD TOOLS ---
+# --- COMBINED BUSINESS OVERVIEW (Single tool for strategic questions) ---
 
 
 @tool
-def add_customer_tool(name: str, mobile: str, address: str = ""):
-    """Adds a new customer. Checks for name and mobile duplicates first."""
-    try:
-        with RAW_ENGINE.connect() as c:
-            # Check name duplicates (UNIQUE constraint on name)
-            name_exists = c.execute(
-                text("SELECT id, name FROM customer WHERE LOWER(name) = LOWER(:name)"),
-                {"name": name},
-            ).fetchone()
-            if name_exists:
-                return f"❌ Customer '{name_exists[1]}' already exists."
-
-            # Check mobile duplicates
-            if mobile:
-                mob_exists = c.execute(
-                    text("SELECT id, name FROM customer WHERE mobile = :mob"),
-                    {"mob": mobile},
-                ).fetchone()
-                if mob_exists:
-                    return f"❌ Mobile {mobile} is already assigned to '{mob_exists[1]}'."
-
-            c.execute(
-                text(
-                    "INSERT INTO customer (name, mobile, address) VALUES (:name, :mobile, :address)"
-                ),
-                {"name": name, "mobile": mobile, "address": address},
-            )
-            c.commit()
-        return f"✅ Added customer: {name}"
-    except Exception as e:
-        return f"❌ Error: {str(e)}"
-
-
-@tool
-def delete_customer_tool(name: str):
-    """Deletes a customer by name. If the result contains 'AMBIGUOUS', you MUST show the full message to the user as-is (do NOT paraphrase it)."""
-    try:
-        with RAW_ENGINE.connect() as c:
-            try:
-                cid = get_safe_match(c, "customer", "name", name)
-            except ValueError as ve:
-                return f"❌ {str(ve)}"
-
-            c.execute(text("DELETE FROM customer WHERE id = :id"), {"id": cid})
-            c.commit()
-        return f"✅ Deleted customer."
-    except Exception as e:
-        return f"❌ Error: {str(e)}"
-
-
-@tool
-def update_customer_details_tool(
-    current_name: str, new_mobile: str = None, new_address: str = None
-):
-    """Updates customer details. If result contains 'AMBIGUOUS', show the full message to user as-is."""
-    try:
-        with RAW_ENGINE.connect() as c:
-            try:
-                cid = get_safe_match(c, "customer", "name", current_name)
-            except ValueError as ve:
-                return f"❌ {str(ve)}"
-
-            clauses = []
-            params = {"id": cid}
-            if new_mobile:
-                clauses.append("mobile = :mobile")
-                params["mobile"] = new_mobile
-            if new_address:
-                clauses.append("address = :address")
-                params["address"] = new_address
-            if not clauses:
-                return "❌ No changes requested."
-
-            c.execute(
-                text(f"UPDATE customer SET {', '.join(clauses)} WHERE id = :id"), params
-            )
-            c.commit()
-        return f"✅ Updated {current_name}."
-    except Exception as e:
-        return f"❌ Error: {str(e)}"
-
-
-# --- PRODUCT CRUD TOOLS ---
-
-
-@tool
-def add_product_tool(
-    product_name: str,
-    variant_name: str,
-    category: str,
-    price: str,
-    initial_stock: str = "0",
-):
-    """Adds a new product/variant. Checks for duplicate variants."""
-    try:
-        price_val = clean_number(price)
-        stock_val = clean_number(initial_stock)
-        with RAW_ENGINE.connect() as c:
-            pid_res = c.execute(
-                text("SELECT id FROM product WHERE LOWER(name) = LOWER(:name)"),
-                {"name": product_name},
-            ).fetchone()
-            if pid_res:
-                prod_id = pid_res[0]
-                # Check if variant already exists under this product
-                var_exists = c.execute(
-                    text(
-                        "SELECT id FROM product_variant WHERE product_id = :pid AND LOWER(name) = LOWER(:vname)"
-                    ),
-                    {"pid": prod_id, "vname": variant_name},
-                ).fetchone()
-                if var_exists:
-                    return f"❌ Variant '{variant_name}' already exists under '{product_name}'."
-            else:
-                prod_id = c.execute(
-                    text("INSERT INTO product (name, category) VALUES (:name, :cat)"),
-                    {"name": product_name, "cat": category},
-                ).lastrowid
-
-            c.execute(
-                text(
-                    "INSERT INTO product_variant (product_id, name, price, unit, current_stock) VALUES (:pid, :vname, :price, 'Unit', :stock)"
-                ),
-                {
-                    "pid": prod_id,
-                    "vname": variant_name,
-                    "price": price_val,
-                    "stock": stock_val,
-                },
-            )
-            c.commit()
-        return f"✅ Added {product_name} - {variant_name}."
-    except Exception as e:
-        return f"❌ Error: {str(e)}"
-
-
-def get_safe_product_match(conn, product_name, variant_name=None):
+def get_business_overview_tool():
+    """Returns a COMPREHENSIVE business overview in one call: revenue trends, top sellers,
+    dead stock, customer segments, inventory alerts, and shopping patterns.
+    USE THIS for broad strategic questions like 'how to increase sales', 'business summary',
+    'give me insights', 'how are we doing'. This is faster than calling multiple tools.
     """
-    Smart matching for products + variants with AMBIGUOUS disambiguation.
-    Returns (variant_id, product_display_name) or raises ValueError.
+    try:
+        if not RAW_ENGINE:
+            return "Database not connected."
+
+        report = ""
+        with RAW_ENGINE.connect() as c:
+            # --- 1. REVENUE COMPARISON ---
+            this_week = c.execute(text("""
+                SELECT ROUND(COALESCE(SUM(csi.quantity * csi.price_at_sale), 0), 2)
+                FROM credit_sale cs JOIN credit_sale_item csi ON cs.id = csi.sale_id
+                WHERE date(cs.sale_date) >= date('now', 'localtime', '-7 days')
+            """)).fetchone()[0] or 0
+
+            last_week = c.execute(text("""
+                SELECT ROUND(COALESCE(SUM(csi.quantity * csi.price_at_sale), 0), 2)
+                FROM credit_sale cs JOIN credit_sale_item csi ON cs.id = csi.sale_id
+                WHERE date(cs.sale_date) BETWEEN date('now', 'localtime', '-14 days') AND date('now', 'localtime', '-8 days')
+            """)).fetchone()[0] or 0
+
+            this_month = c.execute(text("""
+                SELECT ROUND(COALESCE(SUM(csi.quantity * csi.price_at_sale), 0), 2)
+                FROM credit_sale cs JOIN credit_sale_item csi ON cs.id = csi.sale_id
+                WHERE strftime('%Y-%m', cs.sale_date) = strftime('%Y-%m', 'now', 'localtime')
+            """)).fetchone()[0] or 0
+
+            last_month = c.execute(text("""
+                SELECT ROUND(COALESCE(SUM(csi.quantity * csi.price_at_sale), 0), 2)
+                FROM credit_sale cs JOIN credit_sale_item csi ON cs.id = csi.sale_id
+                WHERE strftime('%Y-%m', cs.sale_date) = strftime('%Y-%m', 'now', 'localtime', '-1 month')
+            """)).fetchone()[0] or 0
+
+            def pct(curr, prev):
+                if prev == 0:
+                    return "+∞%" if curr > 0 else "0%"
+                return f"{((curr - prev) / prev) * 100:+.1f}%"
+
+            w_arrow = "📈" if this_week >= last_week else "📉"
+            m_arrow = "📈" if this_month >= last_month else "📉"
+            report += f"## 📊 Revenue Overview\n"
+            report += f"**This Week:** ₹{this_week:,.0f} vs Last: ₹{last_week:,.0f} {w_arrow} **{pct(this_week, last_week)}**\n"
+            report += f"**This Month:** ₹{this_month:,.0f} vs Last: ₹{last_month:,.0f} {m_arrow} **{pct(this_month, last_month)}**\n\n"
+
+            # --- 2. TOP 5 SELLERS ---
+            top = c.execute(text("""
+                SELECT p.name, pv.name as variant, SUM(csi.quantity) as qty,
+                       ROUND(SUM(csi.quantity * csi.price_at_sale), 2) as rev
+                FROM credit_sale_item csi
+                JOIN credit_sale cs ON csi.sale_id = cs.id
+                JOIN product_variant pv ON csi.variant_id = pv.id
+                JOIN product p ON pv.product_id = p.id
+                WHERE cs.sale_date >= date('now', 'localtime', '-30 days')
+                GROUP BY pv.id ORDER BY rev DESC LIMIT 5
+            """)).fetchall()
+
+            if top:
+                report += "## 🏆 Top Sellers (30 days)\n"
+                for i, r in enumerate(top, 1):
+                    report += f"{i}. **{r[0]} - {r[1]}** — {r[2]} units, ₹{r[3]:,.0f}\n"
+                report += "\n"
+
+            # --- 3. DEAD STOCK ---
+            dead = c.execute(text("""
+                SELECT p.name, pv.name, pv.current_stock
+                FROM product_variant pv JOIN product p ON pv.product_id = p.id
+                WHERE pv.current_stock > 0 AND pv.id NOT IN (
+                    SELECT DISTINCT csi.variant_id FROM credit_sale_item csi
+                    JOIN credit_sale cs ON csi.sale_id = cs.id
+                    WHERE cs.sale_date >= date('now', 'localtime', '-30 days')
+                ) LIMIT 5
+            """)).fetchall()
+
+            if dead:
+                report += "## 💀 Dead Stock (No sales, 30 days)\n"
+                for r in dead:
+                    report += f"• {r[0]} - {r[1]} — **{r[2]} units** idle\n"
+                report += "\n"
+
+            # --- 4. URGENT RESTOCKING ---
+            urgent = c.execute(text("""
+                SELECT p.name, pv.name, pv.current_stock
+                FROM product_variant pv JOIN product p ON pv.product_id = p.id
+                WHERE pv.current_stock <= 5 AND pv.current_stock > 0
+                ORDER BY pv.current_stock ASC LIMIT 5
+            """)).fetchall()
+
+            out_count = c.execute(text(
+                "SELECT COUNT(*) FROM product_variant WHERE current_stock <= 0"
+            )).fetchone()[0]
+
+            if out_count > 0 or urgent:
+                report += "## 📦 Inventory Alerts\n"
+                if out_count:
+                    report += f"❌ **{out_count} item(s) out of stock**\n"
+                for r in urgent:
+                    report += f"⚠️ {r[0]} - {r[1]} — only **{r[2]} left**\n"
+                report += "\n"
+
+            # --- 5. TOP CUSTOMERS ---
+            top_cust = c.execute(text("""
+                SELECT c.name, ROUND(SUM(csi.quantity * csi.price_at_sale), 2) as spent,
+                       COUNT(DISTINCT cs.id) as orders
+                FROM customer c
+                JOIN credit_sale cs ON c.id = cs.customer_id
+                JOIN credit_sale_item csi ON cs.id = csi.sale_id
+                WHERE cs.sale_date >= date('now', 'localtime', '-30 days')
+                GROUP BY c.id ORDER BY spent DESC LIMIT 5
+            """)).fetchall()
+
+            if top_cust:
+                report += "## 👥 Top Customers (30 days)\n"
+                for i, r in enumerate(top_cust, 1):
+                    report += f"{i}. **{r[0]}** — ₹{r[1]:,.0f} ({r[2]} orders)\n"
+                report += "\n"
+
+            # --- 6. CATEGORY BREAKDOWN ---
+            cats = c.execute(text("""
+                SELECT p.category, ROUND(SUM(csi.quantity * csi.price_at_sale), 2) as rev
+                FROM credit_sale cs
+                JOIN credit_sale_item csi ON cs.id = csi.sale_id
+                JOIN product_variant pv ON csi.variant_id = pv.id
+                JOIN product p ON pv.product_id = p.id
+                WHERE strftime('%Y-%m', cs.sale_date) = strftime('%Y-%m', 'now', 'localtime')
+                GROUP BY p.category ORDER BY rev DESC LIMIT 5
+            """)).fetchall()
+
+            if cats:
+                report += "## 📂 Top Categories (This Month)\n"
+                total = sum(r[1] for r in cats)
+                for r in cats:
+                    share = (r[1] / total * 100) if total else 0
+                    report += f"• **{r[0]}**: ₹{r[1]:,.0f} ({share:.0f}%)\n"
+
+        return report if report else "No data available yet."
+    except Exception as e:
+        return f"Error: {e}"
+
+
+# --- BUSINESS INTELLIGENCE TOOLS ---
+
+
+@tool
+def get_sales_trends_tool(period: str = "daily"):
+    """Returns sales revenue trends with growth percentages.
+    Use for questions about sales trends, revenue direction, growth, or performance over time.
+    period: 'daily' (last 14 days), 'weekly' (last 8 weeks), or 'monthly' (last 6 months).
     """
-    if variant_name:
-        res = conn.execute(
-            text(
-                "SELECT pv.id, p.name || ' - ' || pv.name FROM product_variant pv "
-                "JOIN product p ON pv.product_id = p.id "
-                "WHERE (LOWER(p.name) LIKE LOWER(:pname) OR LOWER(p.name) LIKE LOWER(:pname_word)) "
-                "AND (LOWER(pv.name) LIKE LOWER(:vname) OR LOWER(pv.name) LIKE LOWER(:vname_word))"
-            ),
-            {"pname": f"{product_name}%", "pname_word": f"% {product_name}%",
-             "vname": f"{variant_name}%", "vname_word": f"% {variant_name}%"},
-        ).fetchall()
-    else:
-        res = conn.execute(
-            text(
-                "SELECT pv.id, p.name || ' - ' || pv.name FROM product_variant pv "
-                "JOIN product p ON pv.product_id = p.id "
-                "WHERE LOWER(p.name) LIKE LOWER(:pname) OR LOWER(p.name) LIKE LOWER(:pname_word)"
-            ),
-            {"pname": f"{product_name}%", "pname_word": f"% {product_name}%"},
-        ).fetchall()
-
-    if not res:
-        raise ValueError(f"No product found matching '{product_name}'.")
-
-    if len(res) > 1:
-        numbered = '\n'.join([f'  {i+1}. {r[1]}' for i, r in enumerate(res[:10])])
-        raise ValueError(
-            f"AMBIGUOUS — {len(res)} matching products found:\n{numbered}\nAsk the user which one they mean."
-        )
-
-    return res[0][0], res[0][1]
-
-
-@tool
-def update_product_tool(
-    product_name: str, variant_name: str, new_price: str = None, new_stock: str = None
-):
-    """Updates price or stock. If result contains 'AMBIGUOUS', show the full message to user as-is."""
     try:
-        with RAW_ENGINE.connect() as c:
-            try:
-                vid, display = get_safe_product_match(c, product_name, variant_name)
-            except ValueError as ve:
-                return f"❌ {str(ve)}"
+        if not RAW_ENGINE:
+            return "Database not connected."
 
-            clauses = []
-            params = {"id": vid}
-            if new_price is not None:
-                clauses.append("price = :price")
-                params["price"] = clean_number(new_price)
-            if new_stock is not None:
-                clauses.append("current_stock = :stock")
-                params["stock"] = clean_number(new_stock)
-            if not clauses:
-                return "❌ No changes requested."
-            c.execute(
-                text(f"UPDATE product_variant SET {', '.join(clauses)} WHERE id = :id"),
-                params,
-            )
-            c.commit()
-        return f"✅ Updated {display}."
+        if period == "weekly":
+            query = """
+                SELECT strftime('%Y-W%W', cs.sale_date) as period,
+                       ROUND(SUM(csi.quantity * csi.price_at_sale), 2) as revenue,
+                       COUNT(DISTINCT cs.id) as transactions
+                FROM credit_sale cs
+                JOIN credit_sale_item csi ON cs.id = csi.sale_id
+                WHERE cs.sale_date >= date('now', 'localtime', '-56 days')
+                GROUP BY period ORDER BY period DESC LIMIT 8
+            """
+        elif period == "monthly":
+            query = """
+                SELECT strftime('%Y-%m', cs.sale_date) as period,
+                       ROUND(SUM(csi.quantity * csi.price_at_sale), 2) as revenue,
+                       COUNT(DISTINCT cs.id) as transactions
+                FROM credit_sale cs
+                JOIN credit_sale_item csi ON cs.id = csi.sale_id
+                WHERE cs.sale_date >= date('now', 'localtime', '-180 days')
+                GROUP BY period ORDER BY period DESC LIMIT 6
+            """
+        else:  # daily
+            query = """
+                SELECT date(cs.sale_date) as period,
+                       ROUND(SUM(csi.quantity * csi.price_at_sale), 2) as revenue,
+                       COUNT(DISTINCT cs.id) as transactions
+                FROM credit_sale cs
+                JOIN credit_sale_item csi ON cs.id = csi.sale_id
+                WHERE cs.sale_date >= date('now', 'localtime', '-14 days')
+                GROUP BY period ORDER BY period DESC LIMIT 14
+            """
+
+        with RAW_ENGINE.connect() as c:
+            rows = c.execute(text(query)).fetchall()
+
+        if not rows:
+            return "No sales data available for this period."
+
+        lines = []
+        for i, r in enumerate(rows):
+            line = f"• **{r[0]}**: ₹{r[1]:,.0f} ({r[2]} txns)"
+            if i < len(rows) - 1:
+                prev_rev = rows[i + 1][1] or 1
+                growth = ((r[1] - prev_rev) / prev_rev) * 100
+                arrow = "📈" if growth > 0 else "📉" if growth < 0 else "➡️"
+                line += f" {arrow} {growth:+.1f}%"
+            lines.append(line)
+
+        return f"📊 **Sales Trends ({period.title()}):**\n\n" + "\n".join(lines)
     except Exception as e:
-        return f"❌ Error: {str(e)}"
+        return f"Error fetching trends: {e}"
 
 
 @tool
-def delete_product_tool(product_name: str, variant_name: str):
-    """Deletes a product variant. If result contains 'AMBIGUOUS', show the full message to user as-is."""
+def get_top_performers_tool(metric: str = "revenue", limit: int = 10):
+    """Returns best AND worst performing products.
+    Use for questions about top sellers, slow movers, dead stock, or product performance.
+    metric: 'revenue' or 'quantity'. limit: number of items (default 10).
+    """
     try:
+        if not RAW_ENGINE:
+            return "Database not connected."
+
         with RAW_ENGINE.connect() as c:
-            try:
-                vid, display = get_safe_product_match(c, product_name, variant_name)
-            except ValueError as ve:
-                return f"❌ {str(ve)}"
+            top = c.execute(text("""
+                SELECT p.name, pv.name as variant, p.category,
+                       SUM(csi.quantity) as qty_sold,
+                       ROUND(SUM(csi.quantity * csi.price_at_sale), 2) as total_revenue
+                FROM credit_sale_item csi
+                JOIN credit_sale cs ON csi.sale_id = cs.id
+                JOIN product_variant pv ON csi.variant_id = pv.id
+                JOIN product p ON pv.product_id = p.id
+                WHERE cs.sale_date >= date('now', 'localtime', '-30 days')
+                GROUP BY pv.id
+                ORDER BY total_revenue DESC
+                LIMIT :limit
+            """), {"limit": limit}).fetchall()
 
-            c.execute(
-                text("DELETE FROM product_variant WHERE id = :id"), {"id": vid}
-            )
-            c.commit()
-        return f"✅ Deleted {display}."
-    except Exception as e:
-        return f"❌ Error: {str(e)}"
-
-
-# --- TRANSACTION TOOLS ---
-
-
-@tool
-def record_sale_tool(customer_name: str, product_name: str, quantity: str):
-    """Records a sale transaction."""
-    try:
-        qty_val = clean_number(quantity)
-        with RAW_ENGINE.connect() as c:
-            # 1. Safe Customer Match
-            try:
-                cid = get_safe_match(c, "customer", "name", customer_name)
-            except ValueError as ve:
-                return f"❌ Customer Error: {str(ve)}"
-
-            # 2. Product Match (with ambiguity check)
-            try:
-                vid, display = get_safe_product_match(c, product_name)
-            except ValueError as ve:
-                return f"❌ Product Error: {str(ve)}"
-
-            row = c.execute(
-                text("SELECT price, current_stock FROM product_variant WHERE id = :id"),
-                {"id": vid},
-            ).fetchone()
-            price, stock = row[0], row[1]
-            if stock < qty_val:
-                return f"❌ Insufficient stock for {display} ({stock})."
-
-            sid = c.execute(
-                text(
-                    "INSERT INTO credit_sale (customer_id, sale_date) VALUES (:cid, date('now'))"
-                ),
-                {"cid": cid},
-            ).lastrowid
-            c.execute(
-                text(
-                    "INSERT INTO credit_sale_item (sale_id, variant_id, quantity, price_at_sale) VALUES (:sid, :vid, :qty, :price)"
-                ),
-                {"sid": sid, "vid": vid, "qty": qty_val, "price": price},
-            )
-            c.execute(
-                text(
-                    "UPDATE product_variant SET current_stock = current_stock - :qty WHERE id = :vid"
-                ),
-                {"qty": qty_val, "vid": vid},
-            )
-            c.commit()
-        return f"✅ Sale recorded."
-    except Exception as e:
-        return f"❌ Error: {str(e)}"
-
-
-@tool
-def delete_last_sale_tool(customer_name: str):
-    """Deletes the most recent sale for a customer."""
-    try:
-        with RAW_ENGINE.connect() as c:
-            try:
-                cid = get_safe_match(c, "customer", "name", customer_name)
-            except ValueError as ve:
-                return f"❌ Customer Error: {str(ve)}"
-
-            sale_res = c.execute(
-                text(
-                    "SELECT id FROM credit_sale WHERE customer_id = :cid ORDER BY sale_date DESC LIMIT 1"
-                ),
-                {"cid": cid},
-            ).fetchone()
-            if not sale_res:
-                return "❌ No recent sales."
-            sid = sale_res[0]
-
-            items = c.execute(
-                text(
-                    "SELECT variant_id, quantity FROM credit_sale_item WHERE sale_id = :sid"
-                ),
-                {"sid": sid},
-            ).fetchall()
-            for vid, qty in items:
-                c.execute(
-                    text(
-                        "UPDATE product_variant SET current_stock = current_stock + :qty WHERE id = :vid"
-                    ),
-                    {"qty": qty, "vid": vid},
+            dead = c.execute(text("""
+                SELECT p.name, pv.name as variant, pv.current_stock, p.category
+                FROM product_variant pv
+                JOIN product p ON pv.product_id = p.id
+                WHERE pv.current_stock > 0
+                AND pv.id NOT IN (
+                    SELECT DISTINCT csi.variant_id
+                    FROM credit_sale_item csi
+                    JOIN credit_sale cs ON csi.sale_id = cs.id
+                    WHERE cs.sale_date >= date('now', 'localtime', '-30 days')
                 )
-            c.execute(text("DELETE FROM credit_sale WHERE id = :sid"), {"sid": sid})
-            c.commit()
-        return "✅ Deleted last sale."
+                ORDER BY pv.current_stock DESC
+                LIMIT :limit
+            """), {"limit": limit}).fetchall()
+
+        report = "🏆 **Top Sellers (Last 30 Days):**\n\n"
+        if top:
+            for i, r in enumerate(top, 1):
+                report += f"{i}. **{r[0]} - {r[1]}** [{r[2]}] — {r[3]} units, ₹{r[4]:,.0f}\n"
+        else:
+            report += "No sales data in last 30 days.\n"
+
+        report += f"\n💀 **Dead Stock (No sales in 30 days, still in stock):**\n\n"
+        if dead:
+            for r in dead:
+                report += f"• {r[0]} - {r[1]} [{r[3]}] — **{r[2]} units** sitting idle\n"
+        else:
+            report += "No dead stock detected — all products are selling!\n"
+
+        return report
     except Exception as e:
-        return f"❌ Error: {str(e)}"
+        return f"Error: {e}"
 
 
 @tool
-def record_purchase_tool(
-    supplier_name: str, product_name: str, quantity: str, cost_price: str
-):
-    """Records a purchase from a supplier."""
+def get_customer_segments_tool():
+    """Returns customer segments: high-value, frequent, declining, and inactive.
+    Use for questions about customer behavior, loyalty, who buys most, or customer strategy.
+    """
     try:
-        qty_val = clean_number(quantity)
-        price_val = clean_number(cost_price)
+        if not RAW_ENGINE:
+            return "Database not connected."
+
         with RAW_ENGINE.connect() as c:
-            # 1. Safe Supplier Match
-            try:
-                sid = get_safe_match(c, "supplier", "name", supplier_name)
-            except ValueError as ve:
-                return f"❌ Supplier Error: {str(ve)}"
+            top_spenders = c.execute(text("""
+                SELECT c.name, ROUND(SUM(csi.quantity * csi.price_at_sale), 2) as total_spent,
+                       COUNT(DISTINCT cs.id) as total_orders,
+                       MAX(cs.sale_date) as last_visit
+                FROM customer c
+                JOIN credit_sale cs ON c.id = cs.customer_id
+                JOIN credit_sale_item csi ON cs.id = csi.sale_id
+                GROUP BY c.id
+                ORDER BY total_spent DESC LIMIT 10
+            """)).fetchall()
 
-            try:
-                vid, _ = get_safe_product_match(c, product_name)
-            except ValueError as ve:
-                return f"❌ Product Error: {str(ve)}"
+            inactive = c.execute(text("""
+                SELECT c.name, MAX(cs.sale_date) as last_visit,
+                       CAST(julianday('now', 'localtime') - julianday(MAX(cs.sale_date)) AS INTEGER) as days_inactive,
+                       COUNT(DISTINCT cs.id) as total_orders
+                FROM customer c
+                JOIN credit_sale cs ON c.id = cs.customer_id
+                GROUP BY c.id
+                HAVING days_inactive > 30
+                ORDER BY days_inactive DESC LIMIT 10
+            """)).fetchall()
 
-            c.execute(
-                text(
-                    "INSERT INTO purchase (supplier_id, variant_id, quantity, purchase_price, purchase_date) VALUES (:sid, :vid, :qty, :price, date('now'))"
-                ),
-                {"sid": sid, "vid": vid, "qty": qty_val, "price": price_val},
-            )
-            c.execute(
-                text(
-                    "UPDATE product_variant SET current_stock = current_stock + :qty WHERE id = :vid"
-                ),
-                {"qty": qty_val, "vid": vid},
-            )
-            c.commit()
-        return "✅ Purchase recorded."
+            new_custs = c.execute(text("""
+                SELECT c.name, MIN(cs.sale_date) as first_visit,
+                       ROUND(SUM(csi.quantity * csi.price_at_sale), 2) as first_spend
+                FROM customer c
+                JOIN credit_sale cs ON c.id = cs.customer_id
+                JOIN credit_sale_item csi ON cs.id = csi.sale_id
+                GROUP BY c.id
+                HAVING date(first_visit) >= date('now', 'localtime', '-14 days')
+                ORDER BY first_visit DESC LIMIT 10
+            """)).fetchall()
+
+            avg_basket = c.execute(text("""
+                SELECT ROUND(AVG(basket), 2) FROM (
+                    SELECT SUM(csi.quantity * csi.price_at_sale) as basket
+                    FROM credit_sale cs
+                    JOIN credit_sale_item csi ON cs.id = csi.sale_id
+                    WHERE cs.sale_date >= date('now', 'localtime', '-30 days')
+                    GROUP BY cs.id
+                )
+            """)).fetchone()
+
+        report = f"👥 **Customer Intelligence Report:**\n\n"
+        report += f"🧺 Average Basket Size (30 days): **₹{avg_basket[0] or 0:,.0f}**\n\n"
+
+        report += "💎 **Top 10 Customers by Spend:**\n"
+        for i, r in enumerate(top_spenders, 1):
+            report += f"{i}. **{r[0]}** — ₹{r[1]:,.0f} ({r[2]} orders, last: {r[3]})\n"
+
+        if inactive:
+            report += f"\n⚠️ **Inactive Customers (30+ days):**\n"
+            for r in inactive:
+                report += f"• **{r[0]}** — {r[2]} days since last visit ({r[3]} past orders)\n"
+
+        if new_custs:
+            report += f"\n🆕 **New Customers (Last 14 Days):**\n"
+            for r in new_custs:
+                report += f"• **{r[0]}** — First visit: {r[1]}, spent ₹{r[2]:,.0f}\n"
+
+        return report
     except Exception as e:
-        return f"❌ Error: {str(e)}"
+        return f"Error: {e}"
 
 
 @tool
-def delete_last_purchase_tool(supplier_name: str):
-    """Deletes the most recent purchase from a supplier."""
+def get_inventory_velocity_tool():
+    """Returns inventory velocity: fast movers, slow movers, and days-of-stock remaining.
+    Use for questions about inventory health, what to restock, stock running out, or reorder.
+    """
     try:
+        if not RAW_ENGINE:
+            return "Database not connected."
+
         with RAW_ENGINE.connect() as c:
-            try:
-                sid = get_safe_match(c, "supplier", "name", supplier_name)
-            except ValueError as ve:
-                return f"❌ Supplier Error: {str(ve)}"
+            velocity = c.execute(text("""
+                SELECT p.name, pv.name as variant, pv.current_stock,
+                       ROUND(COALESCE(SUM(csi.quantity), 0) / 30.0, 2) as daily_velocity,
+                       CASE
+                           WHEN COALESCE(SUM(csi.quantity), 0) > 0 THEN ROUND(pv.current_stock / (SUM(csi.quantity) / 30.0), 1)
+                           ELSE 999
+                       END as days_of_stock
+                FROM product_variant pv
+                JOIN product p ON pv.product_id = p.id
+                LEFT JOIN credit_sale_item csi ON pv.id = csi.variant_id
+                LEFT JOIN credit_sale cs ON csi.sale_id = cs.id
+                    AND cs.sale_date >= date('now', 'localtime', '-30 days')
+                GROUP BY pv.id
+                HAVING pv.current_stock > 0
+                ORDER BY days_of_stock ASC
+                LIMIT 30
+            """)).fetchall()
 
-            res = c.execute(
-                text(
-                    "SELECT id, variant_id, quantity FROM purchase WHERE supplier_id = :sid ORDER BY purchase_date DESC LIMIT 1"
-                ),
-                {"sid": sid},
-            ).fetchone()
-            if not res:
-                return "❌ No recent purchases."
-            pid, vid, qty = res
+            out_of_stock = c.execute(text("""
+                SELECT p.name, pv.name as variant, p.category
+                FROM product_variant pv
+                JOIN product p ON pv.product_id = p.id
+                WHERE pv.current_stock <= 0
+            """)).fetchall()
 
-            c.execute(
-                text(
-                    "UPDATE product_variant SET current_stock = current_stock - :qty WHERE id = :vid"
-                ),
-                {"qty": qty, "vid": vid},
-            )
-            c.execute(text("DELETE FROM purchase WHERE id = :id"), {"id": pid})
-            c.commit()
-        return "✅ Purchase deleted."
+        report = "📦 **Inventory Velocity Report:**\n\n"
+
+        if out_of_stock:
+            report += f"❌ **Out of Stock ({len(out_of_stock)} items):**\n"
+            for r in out_of_stock[:10]:
+                report += f"• {r[0]} - {r[1]} [{r[2]}]\n"
+            report += "\n"
+
+        urgent = [r for r in velocity if r[4] < 7 and r[4] != 999]
+        if urgent:
+            report += "🔴 **Restock Urgently (< 7 days of stock):**\n"
+            for r in urgent:
+                report += f"• **{r[0]} - {r[1]}** — {r[2]} units left, sells {r[3]}/day → **{r[4]} days**\n"
+            report += "\n"
+
+        fast = sorted([r for r in velocity if r[3] > 0], key=lambda x: x[3], reverse=True)[:10]
+        if fast:
+            report += "🚀 **Fast Movers (Highest daily sales):**\n"
+            for r in fast:
+                report += f"• {r[0]} - {r[1]} — **{r[3]} units/day**, {r[2]} in stock\n"
+
+        return report
     except Exception as e:
-        return f"❌ Error: {str(e)}"
+        return f"Error: {e}"
+
+
+@tool
+def get_revenue_comparison_tool():
+    """Compares revenue across periods: this week vs last, this month vs last, with category breakdown.
+    Use for questions about revenue growth, performance comparison, or 'how are we doing'.
+    """
+    try:
+        if not RAW_ENGINE:
+            return "Database not connected."
+
+        with RAW_ENGINE.connect() as c:
+            this_week = c.execute(text("""
+                SELECT ROUND(COALESCE(SUM(csi.quantity * csi.price_at_sale), 0), 2)
+                FROM credit_sale cs JOIN credit_sale_item csi ON cs.id = csi.sale_id
+                WHERE date(cs.sale_date) >= date('now', 'localtime', '-7 days')
+            """)).fetchone()[0] or 0
+
+            last_week = c.execute(text("""
+                SELECT ROUND(COALESCE(SUM(csi.quantity * csi.price_at_sale), 0), 2)
+                FROM credit_sale cs JOIN credit_sale_item csi ON cs.id = csi.sale_id
+                WHERE date(cs.sale_date) BETWEEN date('now', 'localtime', '-14 days') AND date('now', 'localtime', '-8 days')
+            """)).fetchone()[0] or 0
+
+            this_month = c.execute(text("""
+                SELECT ROUND(COALESCE(SUM(csi.quantity * csi.price_at_sale), 0), 2)
+                FROM credit_sale cs JOIN credit_sale_item csi ON cs.id = csi.sale_id
+                WHERE strftime('%Y-%m', cs.sale_date) = strftime('%Y-%m', 'now', 'localtime')
+            """)).fetchone()[0] or 0
+
+            last_month = c.execute(text("""
+                SELECT ROUND(COALESCE(SUM(csi.quantity * csi.price_at_sale), 0), 2)
+                FROM credit_sale cs JOIN credit_sale_item csi ON cs.id = csi.sale_id
+                WHERE strftime('%Y-%m', cs.sale_date) = strftime('%Y-%m', 'now', 'localtime', '-1 month')
+            """)).fetchone()[0] or 0
+
+            categories = c.execute(text("""
+                SELECT p.category, ROUND(SUM(csi.quantity * csi.price_at_sale), 2) as revenue
+                FROM credit_sale cs
+                JOIN credit_sale_item csi ON cs.id = csi.sale_id
+                JOIN product_variant pv ON csi.variant_id = pv.id
+                JOIN product p ON pv.product_id = p.id
+                WHERE strftime('%Y-%m', cs.sale_date) = strftime('%Y-%m', 'now', 'localtime')
+                GROUP BY p.category
+                ORDER BY revenue DESC LIMIT 10
+            """)).fetchall()
+
+        def pct(curr, prev):
+            if prev == 0:
+                return "+∞%" if curr > 0 else "0%"
+            return f"{((curr - prev) / prev) * 100:+.1f}%"
+
+        week_arrow = "📈" if this_week >= last_week else "📉"
+        month_arrow = "📈" if this_month >= last_month else "📉"
+
+        report = f"📊 **Revenue Comparison:**\n\n"
+        report += f"**This Week:** ₹{this_week:,.0f} vs Last Week: ₹{last_week:,.0f} {week_arrow} **{pct(this_week, last_week)}**\n"
+        report += f"**This Month:** ₹{this_month:,.0f} vs Last Month: ₹{last_month:,.0f} {month_arrow} **{pct(this_month, last_month)}**\n\n"
+
+        if categories:
+            report += "📂 **Revenue by Category (This Month):**\n"
+            total_cat = sum(r[1] for r in categories)
+            for r in categories:
+                share = (r[1] / total_cat * 100) if total_cat > 0 else 0
+                report += f"• **{r[0]}**: ₹{r[1]:,.0f} ({share:.1f}%)\n"
+
+        return report
+    except Exception as e:
+        return f"Error: {e}"
+

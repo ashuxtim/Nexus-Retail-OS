@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
-import { Virtuoso } from 'react-virtuoso'; 
-import { 
-  Loader2, Calendar, TrendingUp, TrendingDown, 
-  RefreshCw, ShoppingBag, Printer, ChevronLeft, ChevronRight,
-  Wallet 
+import { Virtuoso } from 'react-virtuoso';
+import {
+    Loader2, Calendar, TrendingUp, TrendingDown,
+    RefreshCw, ShoppingBag, Printer, ChevronLeft, ChevronRight,
+    Wallet
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,7 +28,7 @@ const PrintDaybookContent = React.forwardRef(({ data, date }, ref) => {
                 <p><strong>Date:</strong> {new Date(date).toLocaleDateString()}</p>
                 <p><strong>Generated:</strong> {new Date().toLocaleTimeString()}</p>
             </div>
-            
+
             <div className="grid grid-cols-3 gap-4 mb-6 text-sm border-b border-black pb-6">
                 <div>
                     <span className="block text-gray-500">Money In</span>
@@ -73,7 +73,7 @@ const PrintDaybookContent = React.forwardRef(({ data, date }, ref) => {
 export default function DaybookPage() {
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState(null);
-    const [date, setDate] = useState(new Date().toISOString().split('T')[0]); 
+    const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
 
     useEffect(() => { loadDaybook(); }, [date]);
@@ -109,24 +109,24 @@ export default function DaybookPage() {
         <div className="flex justify-between items-center px-6 py-3 border-b border-border hover:bg-muted/50 transition-colors">
             {/* Column 1: Product Name */}
             <div className="flex-1 font-medium text-sm text-foreground truncate pr-4">{item.name}</div>
-            
+
             {/* Column 2: Quantity (Centered) */}
             <div className="w-24 text-center">
                 <span className="font-mono text-xs text-muted-foreground bg-muted px-2 py-1 rounded border border-border">
                     {item.qty}
                 </span>
             </div>
-            
+
             {/* Column 3: Total (Right Aligned) */}
             <div className="w-32 text-right font-medium text-sm text-foreground">₹{item.total.toFixed(2)}</div>
         </div>
     );
 
-    if (loading) return <div className="h-[calc(100vh-4rem)] flex justify-center items-center"><Loader2 className="animate-spin text-muted-foreground h-8 w-8"/></div>;
+    if (loading) return <div className="h-[calc(100vh-4rem)] flex justify-center items-center"><Loader2 className="animate-spin text-muted-foreground h-8 w-8" /></div>;
 
     return (
         <div className="max-w-[1600px] mx-auto space-y-6 animate-in fade-in duration-500 p-6 pb-20 h-[calc(100vh-40px)] flex flex-col">
-            
+
             {/* --- HIDDEN PRINT AREA --- */}
             <div className="hidden print:block fixed inset-0 bg-white z-[9999] overflow-hidden">
                 <PrintDaybookContent data={data} date={date} />
@@ -138,31 +138,31 @@ export default function DaybookPage() {
                     <h1 className="text-3xl font-bold tracking-tight text-foreground">Daybook</h1>
                     <p className="text-muted-foreground mt-1">Daily financial summary & transaction log.</p>
                 </div>
-                
+
                 <div className="flex items-center gap-3">
                     {/* Date Navigation */}
                     <div className="flex items-center gap-1 bg-background p-1 rounded-md border shadow-sm">
-                        <Button 
-                            variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" 
+                        <Button
+                            variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground"
                             onClick={() => changeDate(-1)} title="Previous Day"
                         >
-                            <ChevronLeft size={16}/>
+                            <ChevronLeft size={16} />
                         </Button>
-                        
+
                         <div className="relative">
-                            <input 
-                                type="date" 
-                                className="bg-transparent font-medium text-sm text-foreground outline-none px-2 w-[120px] cursor-pointer text-center" 
-                                value={date} 
-                                onChange={e => setDate(e.target.value)} 
+                            <input
+                                type="date"
+                                className="bg-transparent font-medium text-sm text-foreground outline-none px-2 w-[120px] cursor-pointer text-center"
+                                value={date}
+                                onChange={e => setDate(e.target.value)}
                             />
                         </div>
 
-                        <Button 
-                            variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" 
+                        <Button
+                            variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground"
                             onClick={() => changeDate(1)} title="Next Day"
                         >
-                            <ChevronRight size={16}/>
+                            <ChevronRight size={16} />
                         </Button>
                     </div>
 
@@ -175,11 +175,11 @@ export default function DaybookPage() {
                     <Separator orientation="vertical" className="h-6" />
 
                     <Button variant="outline" size="sm" className="h-9 gap-2" onClick={() => setIsPreviewOpen(true)}>
-                        <Printer size={16}/> Print
+                        <Printer size={16} /> Print
                     </Button>
-                    
+
                     <Button variant="ghost" size="icon" onClick={loadDaybook} className="h-9 w-9 text-muted-foreground hover:text-primary">
-                        <RefreshCw size={16}/>
+                        <RefreshCw size={16} />
                     </Button>
                 </div>
             </div>
@@ -189,8 +189,8 @@ export default function DaybookPage() {
                 <Card className="shadow-sm border-border">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium text-muted-foreground">Money In</CardTitle>
-                        <div className="h-8 w-8 rounded-md flex items-center justify-center bg-emerald-50">
-                            <TrendingUp size={16} className="text-emerald-600"/>
+                        <div className="h-8 w-8 rounded-md flex items-center justify-center bg-emerald-500/10">
+                            <TrendingUp size={16} className="text-emerald-600" />
                         </div>
                     </CardHeader>
                     <CardContent>
@@ -201,8 +201,8 @@ export default function DaybookPage() {
                 <Card className="shadow-sm border-border">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium text-muted-foreground">Money Out</CardTitle>
-                        <div className="h-8 w-8 rounded-md flex items-center justify-center bg-red-50">
-                            <TrendingDown size={16} className="text-red-600"/>
+                        <div className="h-8 w-8 rounded-md flex items-center justify-center bg-red-500/10">
+                            <TrendingDown size={16} className="text-red-600" />
                         </div>
                     </CardHeader>
                     <CardContent>
@@ -213,8 +213,8 @@ export default function DaybookPage() {
                 <Card className="shadow-sm border-border">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium text-muted-foreground">Net Cash</CardTitle>
-                        <div className="h-8 w-8 rounded-md flex items-center justify-center bg-blue-50">
-                            <Wallet size={16} className="text-blue-600"/>
+                        <div className="h-8 w-8 rounded-md flex items-center justify-center bg-blue-500/10">
+                            <Wallet size={16} className="text-blue-600" />
                         </div>
                     </CardHeader>
                     <CardContent>
@@ -253,7 +253,7 @@ export default function DaybookPage() {
                     {/* Header Row */}
                     <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
                         <div className="flex items-center gap-2">
-                            <ShoppingBag size={16} className="text-muted-foreground"/> 
+                            <ShoppingBag size={16} className="text-muted-foreground" />
                             <span className="font-semibold text-sm text-foreground">Item Movement</span>
                         </div>
                         <Badge variant="secondary" className="font-normal">
@@ -271,7 +271,7 @@ export default function DaybookPage() {
                     <div className="flex-1 bg-background min-h-0">
                         {!data?.items || data.items.length === 0 ? (
                             <div className="flex h-full items-center justify-center text-muted-foreground text-sm flex-col gap-2">
-                                <ShoppingBag size={32} className="opacity-20"/>
+                                <ShoppingBag size={32} className="opacity-20" />
                                 No items sold on this date.
                             </div>
                         ) : (
@@ -292,7 +292,7 @@ export default function DaybookPage() {
                     </div>
                     <DialogFooter className="p-4 border-t border-border bg-background flex-shrink-0">
                         <Button variant="outline" onClick={() => setIsPreviewOpen(false)}>Close</Button>
-                        <Button onClick={() => window.print()} className="gap-2"><Printer size={16}/> Print Now</Button>
+                        <Button onClick={() => window.print()} className="gap-2"><Printer size={16} /> Print Now</Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
