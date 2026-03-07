@@ -47,3 +47,7 @@ python_server/*.log
 .pytest_cache/
 .vscode/
 python_server/cachedir/
+
+# --- Ignore local scripts and notes ---
+bugs.md
+merge_code.py
