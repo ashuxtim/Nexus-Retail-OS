@@ -1,5 +1,6 @@
 # FILE: python_server/ai_engine/safety.py
 import logging
+import re
 
 _logger = logging.getLogger("NexusAI_Backend")
 
@@ -19,21 +20,19 @@ class SafetyGuard:
             "insert",
             "add",
             "create",
-            "ad",
-            "creat",
-            "del",
-            "remov",
-            "mak",
-            "new",
         ]
+        # Whole-word regex — "add" matches "add customer" but NOT "address"
+        self._unsafe_re = re.compile(
+            r'\b(' + '|'.join(re.escape(w) for w in self.unsafe_keywords) + r')\b',
+            re.IGNORECASE
+        )
 
     def classify_intent(self, user_text):
         """
         Decides if the user wants to CHAT, QUERY data, or perform a DANGEROUS action.
         """
-        # 1. Heuristic Check (Fast)
-        user_text_lower = user_text.lower()
-        if any(word in user_text_lower for word in self.unsafe_keywords):
+        # 1. Heuristic Check (Fast) — whole-word matching
+        if self._unsafe_re.search(user_text):
             return "DANGER"
 
         # 2. LLM Check (Accurate)

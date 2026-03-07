@@ -70,7 +70,7 @@ def build_nexus_agent(raw_engine, groq_key):
     agent_executor = create_sql_agent(
         llm=agent_llm,
         db=db,
-        agent_type="openai-tools",
+        agent_type="tool-calling",
         verbose=False,
         extra_tools=[
             # Search & Analytics
@@ -92,6 +92,7 @@ def build_nexus_agent(raw_engine, groq_key):
             record_purchase_tool,
             delete_last_purchase_tool,
         ],
+        agent_executor_kwargs={"handle_parsing_errors": True},
         agent_kwargs={"system_message": SystemMessage(content=system_instructions)},
     )
 

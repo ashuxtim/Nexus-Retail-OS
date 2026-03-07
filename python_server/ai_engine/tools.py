@@ -68,24 +68,24 @@ def get_safe_match(conn, table, name_col, search_name):
         names = ", ".join([r[1] for r in exact])
         raise ValueError(f"Ambiguous exact match. Found multiple: {names}")
 
-    # 2. Fuzzy/Like Match
+    # 2. Fuzzy/Like Match — word-boundary prefix ("raj" matches "Raj Kumar" but NOT "Rajesh")
     fuzzy = conn.execute(
         text(
-            f"SELECT id, {name_col} FROM {table} WHERE LOWER({name_col}) LIKE LOWER(:name)"
+            f"SELECT id, {name_col} FROM {table} "
+            f"WHERE LOWER({name_col}) LIKE LOWER(:prefix) "
+            f"OR LOWER({name_col}) LIKE LOWER(:word_prefix)"
         ),
-        {"name": f"%{search_name}%"},
+        {"prefix": f"{search_name}%", "word_prefix": f"% {search_name}%"},
     ).fetchall()
 
     if len(fuzzy) == 0:
         raise ValueError(f"No {table} found matching '{search_name}'")
 
     if len(fuzzy) > 1:
-        if len(search_name) < 3:
-            raise ValueError(
-                f"Search '{search_name}' is too vague. Found {len(fuzzy)} matches."
-            )
-        names = ", ".join([r[1] for r in fuzzy[:5]])
-        raise ValueError(f"Multiple matches found: {names}. Please specify which one.")
+        numbered = '\n'.join([f'  {i+1}. {n}' for i, (_, n) in enumerate(fuzzy[:10])])
+        raise ValueError(
+            f"AMBIGUOUS — {len(fuzzy)} matching records found:\n{numbered}\nAsk the user which one they mean."
+        )
 
     # Single fuzzy match — still do sibling check
     matched_id, matched_name = fuzzy[0]
@@ -115,9 +115,11 @@ def _find_siblings(conn, table, name_col, matched_name, matched_id):
 
     siblings = conn.execute(
         text(
-            f"SELECT id, {name_col} FROM {table} WHERE LOWER({name_col}) LIKE LOWER(:prefix) AND id != :id"
+            f"SELECT id, {name_col} FROM {table} "
+            f"WHERE (LOWER({name_col}) LIKE LOWER(:prefix) OR LOWER({name_col}) LIKE LOWER(:word_prefix)) "
+            f"AND id != :id"
         ),
-        {"prefix": f"{prefix}%", "id": matched_id},
+        {"prefix": f"{prefix}%", "word_prefix": f"% {prefix}%", "id": matched_id},
     ).fetchall()
     return siblings
 
@@ -243,7 +245,7 @@ def delete_customer_tool(name: str):
 def update_customer_details_tool(
     current_name: str, new_mobile: str = None, new_address: str = None
 ):
-    """Updates customer details."""
+    """Updates customer details. If result contains 'AMBIGUOUS', show the full message to user as-is."""
     try:
         with RAW_ENGINE.connect() as c:
             try:
@@ -335,18 +337,20 @@ def get_safe_product_match(conn, product_name, variant_name=None):
             text(
                 "SELECT pv.id, p.name || ' - ' || pv.name FROM product_variant pv "
                 "JOIN product p ON pv.product_id = p.id "
-                "WHERE LOWER(p.name) LIKE LOWER(:pname) AND LOWER(pv.name) LIKE LOWER(:vname)"
+                "WHERE (LOWER(p.name) LIKE LOWER(:pname) OR LOWER(p.name) LIKE LOWER(:pname_word)) "
+                "AND (LOWER(pv.name) LIKE LOWER(:vname) OR LOWER(pv.name) LIKE LOWER(:vname_word))"
             ),
-            {"pname": f"%{product_name}%", "vname": f"%{variant_name}%"},
+            {"pname": f"{product_name}%", "pname_word": f"% {product_name}%",
+             "vname": f"{variant_name}%", "vname_word": f"% {variant_name}%"},
         ).fetchall()
     else:
         res = conn.execute(
             text(
                 "SELECT pv.id, p.name || ' - ' || pv.name FROM product_variant pv "
                 "JOIN product p ON pv.product_id = p.id "
-                "WHERE LOWER(p.name) LIKE LOWER(:pname)"
+                "WHERE LOWER(p.name) LIKE LOWER(:pname) OR LOWER(p.name) LIKE LOWER(:pname_word)"
             ),
-            {"pname": f"%{product_name}%"},
+            {"pname": f"{product_name}%", "pname_word": f"% {product_name}%"},
         ).fetchall()
 
     if not res:
@@ -428,21 +432,16 @@ def record_sale_tool(customer_name: str, product_name: str, quantity: str):
                 return f"❌ Customer Error: {str(ve)}"
 
             # 2. Product Match (with ambiguity check)
-            prod_res = c.execute(
-                text(
-                    "SELECT pv.id, pv.price, pv.current_stock, p.name || ' - ' || pv.name "
-                    "FROM product_variant pv JOIN product p ON pv.product_id = p.id "
-                    "WHERE LOWER(p.name) LIKE LOWER(:name)"
-                ),
-                {"name": f"%{product_name}%"},
-            ).fetchall()
-            if not prod_res:
-                return f"❌ Product '{product_name}' not found."
-            if len(prod_res) > 1:
-                numbered = '\n'.join([f'  {i+1}. {r[3]}' for i, r in enumerate(prod_res[:10])])
-                return f"❌ AMBIGUOUS — {len(prod_res)} matching products found:\n{numbered}\nAsk the user which one they mean."
+            try:
+                vid, display = get_safe_product_match(c, product_name)
+            except ValueError as ve:
+                return f"❌ Product Error: {str(ve)}"
 
-            vid, price, stock, display = prod_res[0]
+            row = c.execute(
+                text("SELECT price, current_stock FROM product_variant WHERE id = :id"),
+                {"id": vid},
+            ).fetchone()
+            price, stock = row[0], row[1]
             if stock < qty_val:
                 return f"❌ Insufficient stock for {display} ({stock})."
 
