@@ -74,7 +74,7 @@ networkx==3.6.1
 Nuitka==2.8.9
 numpy==2.3.5
 ordered-set==4.1.0
-orjson==3.11.4
+orjson>=3.11.5
 packaging==25.0
 pandas==2.3.3
 pathspec==1.0.3
