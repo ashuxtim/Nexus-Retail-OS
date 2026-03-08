@@ -4,7 +4,6 @@ from sqlalchemy import text
 from langchain_core.tools import tool
 
 # --- GLOBAL CONTEXT (Injected from main.py) ---
-RAW_ENGINE = None
 SEARCH_ENGINE = None
 ANALYTICS_CACHE = {}
 
@@ -14,8 +13,7 @@ def set_context(engine, search_engine_ref, analytics_cache_ref):
     Injects dependencies so tools can access DB, Vector Store, and Cache.
     Call this from main.py during startup.
     """
-    global RAW_ENGINE, SEARCH_ENGINE, ANALYTICS_CACHE
-    RAW_ENGINE = engine
+    global SEARCH_ENGINE, ANALYTICS_CACHE
     SEARCH_ENGINE = search_engine_ref
     ANALYTICS_CACHE = analytics_cache_ref
     print("✅ AI Tools Context Loaded.")
@@ -43,9 +41,10 @@ def search_supplier_tool(search_term: str):
     Searches for suppliers by name. Use this before recording purchases.
     """
     try:
-        if not RAW_ENGINE:
+        from core import state as _state
+        if not _state.raw_engine:
             return "Database not connected."
-        with RAW_ENGINE.connect() as c:
+        with _state.raw_engine.connect() as c:
             res = c.execute(
                 text(
                     "SELECT name, mobile FROM supplier WHERE LOWER(name) LIKE LOWER(:name) LIMIT 5"
@@ -433,11 +432,12 @@ def get_business_overview_tool():
     'give me insights', 'how are we doing'. This is faster than calling multiple tools.
     """
     try:
-        if not RAW_ENGINE:
+        from core import state as _state
+        if not _state.raw_engine:
             return "Database not connected."
 
         report = ""
-        with RAW_ENGINE.connect() as c:
+        with _state.raw_engine.connect() as c:
             # --- 1. REVENUE COMPARISON ---
             this_week = c.execute(text("""
                 SELECT ROUND(COALESCE(SUM(csi.quantity * csi.price_at_sale), 0), 2)
@@ -579,7 +579,8 @@ def get_sales_trends_tool(period: str = "daily"):
     period: 'daily' (last 14 days), 'weekly' (last 8 weeks), or 'monthly' (last 6 months).
     """
     try:
-        if not RAW_ENGINE:
+        from core import state as _state
+        if not _state.raw_engine:
             return "Database not connected."
 
         if period == "weekly":
@@ -613,7 +614,7 @@ def get_sales_trends_tool(period: str = "daily"):
                 GROUP BY period ORDER BY period DESC LIMIT 14
             """
 
-        with RAW_ENGINE.connect() as c:
+        with _state.raw_engine.connect() as c:
             rows = c.execute(text(query)).fetchall()
 
         if not rows:
@@ -641,10 +642,11 @@ def get_top_performers_tool(metric: str = "revenue", limit: int = 10):
     metric: 'revenue' or 'quantity'. limit: number of items (default 10).
     """
     try:
-        if not RAW_ENGINE:
+        from core import state as _state
+        if not _state.raw_engine:
             return "Database not connected."
 
-        with RAW_ENGINE.connect() as c:
+        with _state.raw_engine.connect() as c:
             top = c.execute(
                 text("""
                 SELECT p.name, pv.name as variant, p.category,
@@ -709,10 +711,11 @@ def get_customer_segments_tool():
     Use for questions about customer behavior, loyalty, who buys most, or customer strategy.
     """
     try:
-        if not RAW_ENGINE:
+        from core import state as _state
+        if not _state.raw_engine:
             return "Database not connected."
 
-        with RAW_ENGINE.connect() as c:
+        with _state.raw_engine.connect() as c:
             top_spenders = c.execute(text("""
                 SELECT c.name, ROUND(SUM(csi.quantity * csi.price_at_sale), 2) as total_spent,
                        COUNT(DISTINCT cs.id) as total_orders,
@@ -786,10 +789,11 @@ def get_inventory_velocity_tool():
     Use for questions about inventory health, what to restock, stock running out, or reorder.
     """
     try:
-        if not RAW_ENGINE:
+        from core import state as _state
+        if not _state.raw_engine:
             return "Database not connected."
 
-        with RAW_ENGINE.connect() as c:
+        with _state.raw_engine.connect() as c:
             velocity = c.execute(text("""
                 SELECT p.name, pv.name as variant, pv.current_stock,
                        ROUND(COALESCE(SUM(csi.quantity), 0) / 30.0, 2) as daily_velocity,
@@ -849,10 +853,11 @@ def get_revenue_comparison_tool():
     Use for questions about revenue growth, performance comparison, or 'how are we doing'.
     """
     try:
-        if not RAW_ENGINE:
+        from core import state as _state
+        if not _state.raw_engine:
             return "Database not connected."
 
-        with RAW_ENGINE.connect() as c:
+        with _state.raw_engine.connect() as c:
             this_week = c.execute(text("""
                 SELECT ROUND(COALESCE(SUM(csi.quantity * csi.price_at_sale), 0), 2)
                 FROM credit_sale cs JOIN credit_sale_item csi ON cs.id = csi.sale_id
