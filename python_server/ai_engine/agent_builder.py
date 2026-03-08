@@ -18,6 +18,10 @@ from .tools import (
     get_customer_segments_tool,
     get_inventory_velocity_tool,
     get_revenue_comparison_tool,
+    get_product_stockout_tool,
+    get_product_basket_tool,
+    get_customer_churn_for_product_tool,
+    resolve_entity_tool,
 )
 
 # Module-level engine ref, set during build
@@ -82,10 +86,19 @@ def build_nexus_agent(raw_engine, groq_key):
         except Exception as e:
             return f"❌ SQL Error: {str(e)}"
 
-    # 3. Build tool list — 11 tools total
+    # 3. Build tool list 
     all_tools = [
-        search_catalog_tool,
-        search_supplier_tool,
+        # Entity resolution and search
+        resolve_entity_tool,          # fuzzy name → ID lookup
+        search_catalog_tool,          # General search (products/customers/suppliers)
+        search_supplier_tool,         # Keep: exact supplier name SQL fallback
+
+        # Product-specific ML tools
+        get_product_stockout_tool,    # Monte Carlo predictions for a specific product
+        get_product_basket_tool,      # FP-Growth associations for a specific product
+        get_customer_churn_for_product_tool,  # XGBoost churn for a product's buyers
+
+        # Business-wide ML tools
         get_business_overview_tool,
         check_churn_risk_tool,
         get_market_insights_tool,
@@ -108,16 +121,40 @@ CRITICAL RULES:
 5. Be concise. Use markdown headers, bullet points and bold for key numbers.
 6. PREFER calling ONE comprehensive tool over calling many small ones.
 
-TOOL SELECTION GUIDE (IMPORTANT — pick the RIGHT tool):
-- "How to increase sales?" / "Business summary" / "Give me insights" / "How are we doing?" → **get_business_overview_tool** (ONE call, returns everything)
-- Product/customer search → search_catalog_tool / search_supplier_tool
-- "Revenue this week vs last" → get_revenue_comparison_tool
-- "Sales trends" / "Daily/weekly sales" → get_sales_trends_tool
-- "Top sellers" / "Dead stock" → get_top_performers_tool
-- "Inventory status" / "What to restock" → get_inventory_velocity_tool
-- "Customer insights" / "Who buys most" → get_customer_segments_tool
-- "Churn risk" / "Losing customers" → check_churn_risk_tool
-- "Shopping patterns" / "What goes together" → get_market_insights_tool
+TOOL SELECTION GUIDE (CRITICAL — pick the RIGHT tool):
+
+PRODUCT-SPECIFIC QUERIES (use these first for product questions):
+- "when will [product] finish" / "[product] stock running low" / "restock [product]"
+  → get_product_stockout_tool(product_name)
+  
+- "what sells with [product]" / "cross-sell [product]" / "combo for [product]"
+  → get_product_basket_tool(product_name)
+  
+- "are [product] buyers at risk" / "churn for [product] customers" 
+  → get_customer_churn_for_product_tool(product_name)
+
+- "find [product/customer/supplier]" / "do we have X" / "who supplies X" / "find supplier for X"
+  → search_catalog_tool(search_term, category='product'/'customer'/'supplier')
+  CRITICAL: ALWAYS use search_catalog_tool for finding suppliers. NEVER use search_supplier_tool unless specifically asking for exact SQL fallback.
+
+- "get ID for [name]" / "resolve [name]" (when you need ID for SQL)
+  → resolve_entity_tool(name, entity_type)
+
+BUSINESS-WIDE QUERIES:
+- "business summary" / "how are we doing" / "give me insights" 
+  → get_business_overview_tool()
+  
+- "all customers at churn risk" / "who's leaving overall"
+  → check_churn_risk_tool()
+  
+- "shopping patterns overall" / "what goes with what generally"
+  → get_market_insights_tool()
+  
+- "revenue this week vs last" → get_revenue_comparison_tool()
+- "sales trends" → get_sales_trends_tool()
+- "top sellers" / "dead stock" → get_top_performers_tool()
+- "inventory status" / "what to restock overall" → get_inventory_velocity_tool()
+- "customer segments" / "who buys most" → get_customer_segments_tool()
 - Any other data question → run_sql_query with SELECT query
 
 When answering, structure your response with markdown:
@@ -139,7 +176,7 @@ DATABASE SCHEMA (SQLite):
 IMPORTANT: sale_date and invoice_date store full datetime strings. Use date(sale_date) for date comparisons.
 Example: WHERE date(cs.sale_date) = date('now', 'localtime')"""
 
-    # 5. Create lean ReAct agent (11 tools)
+    # 5. Create lean ReAct agent (15 tools)
     agent = create_react_agent(agent_llm, all_tools, prompt=system_prompt)
 
     return agent, router_llm

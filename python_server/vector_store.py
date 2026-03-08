@@ -1,16 +1,13 @@
-import faiss
-import numpy as np
-import pandas as pd
-import json
 import os
+import shutil
 import threading
 import time
 from sentence_transformers import SentenceTransformer
 from sqlalchemy import create_engine, text
+import chromadb
+from chromadb.config import Settings
 from core.time_utils import sqlite_connect_args
 
-# 1. FIX TIMEOUT: Set this globally before model load
-# Increases wait time from 10s to 120s to handle slow internet
 os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = "120"
 
 
@@ -18,202 +15,267 @@ class SmartSearchEngine:
     def __init__(self, db_path, base_dir=None):
         self.db_path = db_path
 
-        # Determine storage paths
+        # ChromaDB storage path — replaces ml_store/vectors/
         if base_dir:
-            self.store_dir = os.path.join(base_dir, "ml_store", "vectors")
+            self.chroma_dir = os.path.join(base_dir, "ml_store", "chroma")
         else:
-            self.store_dir = os.path.join(
-                os.path.dirname(db_path), "ml_store", "vectors"
+            self.chroma_dir = os.path.join(
+                os.path.dirname(db_path), "ml_store", "chroma"
             )
-
-        os.makedirs(self.store_dir, exist_ok=True)
-
-        # Paths for files
-        self.paths = {
-            "p_index": os.path.join(self.store_dir, "products.index"),
-            "p_meta": os.path.join(self.store_dir, "products_meta.json"),
-            "c_index": os.path.join(self.store_dir, "customers.index"),
-            "c_meta": os.path.join(self.store_dir, "customers_meta.json"),
-        }
+        os.makedirs(self.chroma_dir, exist_ok=True)
 
         self.model = None
-        self.product_index = None
-        self.customer_index = None
-        self.product_data = []
-        self.customer_data = []
+        self.client = None
 
-        # --- NEW STATE FLAGS ---
+        # Three collections — products, customers, suppliers
+        self.collections = {
+            "product": None,
+            "customer": None,
+            "supplier": None,
+        }
+
+        # State flags
         self.is_ready = False
         self.is_loading = False
         self.load_error = None
+        
+        # Threading lock for polling loop
+        self._sync_lock = threading.Lock()
 
     def initialize(self):
-        """
-        🚀 NON-BLOCKING INITIALIZATION
-        Starts the heavy loading process in a background thread.
-        This allows main.py to finish starting up immediately.
-        """
+        """Non-blocking startup"""
         if self.is_loading or self.is_ready:
             return
-
         self.is_loading = True
-        print(
-            "⏳ AI Engine: Initialization started in background... (App is responsive)"
-        )
-
-        # Start the heavy lifting in a separate thread (Daemon = dies if app closes)
+        print("⏳ AI Engine: ChromaDB initialization started in background...")
         thread = threading.Thread(target=self._heavy_load_process, daemon=True)
         thread.start()
 
+    def _get_db_engine(self):
+        return create_engine(
+            f"sqlite:///{self.db_path}", connect_args=sqlite_connect_args()
+        )
+
     def _heavy_load_process(self):
-        """The actual heavy lifting that used to block your app."""
         try:
-            # 1. Load Model (This triggers the download)
-            print("   ⬇️ Loading/Downloading Embedding Model (timeout=120s)...")
+            # Clean up old FAISS files
+            old_vectors_dir = os.path.join(os.path.dirname(self.chroma_dir), "vectors")
+            if os.path.exists(old_vectors_dir):
+                shutil.rmtree(old_vectors_dir)
+                print("   🗑️ Cleaned up old FAISS index files.")
+
+            # 1. Load embedding model
+            print("   ⬇️ Loading embedding model...")
             self.model = SentenceTransformer("all-MiniLM-L6-v2")
 
-            # 2. Handle Indexes
-            self._handle_index("product")
-            self._handle_index("customer")
+            # 2. Initialize ChromaDB persistent client
+            self.client = chromadb.PersistentClient(
+                path=self.chroma_dir,
+                settings=Settings(anonymized_telemetry=False)
+            )
 
-            # 3. Mark as Ready
+            # 3. Get or create all three collections
+            for name in self.collections:
+                self.collections[name] = self.client.get_or_create_collection(
+                    name=name,
+                    metadata={"hnsw:space": "cosine"}  # cosine similarity — better than L2
+                )
+
+            # 4. Do initial full sync for all three entities
+            self._sync_entity("product")
+            self._sync_entity("customer")
+            self._sync_entity("supplier")
+
+            # 5. Start background polling loop (every 5 minutes)
+            poll_thread = threading.Thread(target=self._polling_loop, daemon=True)
+            poll_thread.start()
+
             self.is_ready = True
             self.is_loading = False
             self.load_error = None
-            print(
-                f"✅ AI Engine: Online and ready. Products: {len(self.product_data)} | Customers: {len(self.customer_data)}"
-            )
+
+            counts = {k: self.collections[k].count() for k in self.collections}
+            print(f"✅ ChromaDB ready. Products: {counts['product']} | "
+                  f"Customers: {counts['customer']} | Suppliers: {counts['supplier']}")
 
         except Exception as e:
             self.load_error = str(e)
             self.is_loading = False
-            print(f"❌ AI Engine Initialization Failed: {e}")
-            # Optional: Retry logic could go here
+            print(f"❌ ChromaDB initialization failed: {e}")
 
-    def _handle_index(self, entity_type):
-        """Generic logic to Load -> Check Updates -> Save"""
-        if entity_type == "product":
-            index_path = self.paths["p_index"]
-            meta_path = self.paths["p_meta"]
-            table_query = "SELECT v.id, v.name as v_name, p.name as p_name, v.price, v.current_stock FROM product_variant v JOIN product p ON v.product_id = p.id"
-
-            def get_text(row):
-                return f"{row['p_name']} {row['v_name']}"
-
-        else:
-            index_path = self.paths["c_index"]
-            meta_path = self.paths["c_meta"]
-            table_query = "SELECT id, name, mobile FROM customer"
-
-            def get_text(row):
-                return f"{row['name']} {str(row['mobile'])}"
-
-        # 1. LOAD or CREATE
-        index = None
-        current_data = []
-        last_max_id = 0
-
-        if os.path.exists(index_path) and os.path.exists(meta_path):
+    def _polling_loop(self):
+        """Runs every 5 minutes — checks for new, updated, or deleted records."""
+        while True:
+            time.sleep(300)  # 5 minutes
             try:
-                index = faiss.read_index(index_path)
-                with open(meta_path, "r") as f:
-                    meta = json.load(f)
-                    current_data = meta.get("data", [])
-                    last_max_id = meta.get("max_id", 0)
+                self._sync_entity("product")
+                self._sync_entity("customer")
+                self._sync_entity("supplier")
+                print("🔄 ChromaDB: Background sync complete.")
             except Exception as e:
-                print(f"   ⚠️ Corrupt index found, rebuilding: {e}")
-                index = None
+                print(f"⚠️ ChromaDB poll sync error: {e}")
 
-        # 2. FETCH DATA FROM DB
-        engine = create_engine(
-            f"sqlite:///{self.db_path}", connect_args=sqlite_connect_args()
-        )
-        with engine.connect() as conn:
-            if index is not None:
-                df = pd.read_sql(text(table_query), conn)
-                new_rows = df[df["id"] > last_max_id].copy()
-            else:
-                df = pd.read_sql(text(table_query), conn)
-                new_rows = df
+    def _sync_entity(self, entity_type):
+        """
+        Full reconciliation sync — handles NEW, UPDATED, and DELETED records.
+        """
+        with self._sync_lock:
+            collection = self.collections[entity_type]
+            db_engine = self._get_db_engine()
 
-        if df.empty:
-            if entity_type == "product":
-                self.product_index = index
-                self.product_data = current_data
-            else:
-                self.customer_index = index
-                self.customer_data = current_data
-            return
+            # --- FETCH FROM DATABASE ---
+            with db_engine.connect() as conn:
+                if entity_type == "product":
+                    rows = conn.execute(text(
+                        """SELECT v.id, v.name as v_name, p.name as p_name, 
+                                  p.category, v.price, v.current_stock
+                           FROM product_variant v 
+                           JOIN product p ON v.product_id = p.id
+                           WHERE v.current_stock >= 0"""
+                    )).fetchall()
+                    def make_doc(row):
+                        # category included for category-based queries like "cold drinks"
+                        return f"{row.p_name} {row.v_name} {row.category or ''}"
+                    def make_meta(row):
+                        return {
+                            "variant_id": row.id,
+                            "product_name": row.p_name,
+                            "variant_name": row.v_name,
+                            "category": row.category or "",
+                            "price": float(row.price or 0),
+                            "current_stock": float(row.current_stock or 0),
+                            "entity_type": "product"
+                        }
 
-        # 3. INCREMENTAL UPDATE
-        if not new_rows.empty:
-            new_rows["search_text"] = new_rows.apply(get_text, axis=1)
-            embeddings = self.model.encode(new_rows["search_text"].tolist())
+                elif entity_type == "customer":
+                    rows = conn.execute(text(
+                        "SELECT id, name, mobile, address FROM customer"
+                    )).fetchall()
+                    def make_doc(row):
+                        # CRITICAL FIX: mobile NOT included in embedding text
+                        # Mobile is stored as metadata only for exact lookup
+                        return f"{row.name}"
+                    def make_meta(row):
+                        return {
+                            "customer_id": row.id,
+                            "name": row.name,
+                            "mobile": str(row.mobile or ""),
+                            "entity_type": "customer"
+                        }
 
-            if index is None:
-                dimension = embeddings.shape[1]
-                index = faiss.IndexFlatL2(dimension)
+                elif entity_type == "supplier":
+                    rows = conn.execute(text(
+                        "SELECT id, name, mobile FROM supplier"
+                    )).fetchall()
+                    def make_doc(row):
+                        return f"{row.name}"
+                    def make_meta(row):
+                        return {
+                            "supplier_id": row.id,
+                            "name": row.name,
+                            "mobile": str(row.mobile or ""),
+                            "entity_type": "supplier"
+                        }
 
-            index.add(np.array(embeddings).astype("float32"))
+            if not rows:
+                return
 
-            new_data_list = new_rows.drop(columns=["search_text"]).to_dict("records")
-            current_data.extend(new_data_list)
-            new_max_id = int(df["id"].max())
+            # --- RECONCILIATION ---
+            db_ids = {str(row.id) for row in rows}
 
-            faiss.write_index(index, index_path)
-            with open(meta_path, "w") as f:
-                json.dump(
-                    {
-                        "max_id": new_max_id,
-                        "count": len(current_data),
-                        "data": current_data,
-                    },
-                    f,
+            # Get all IDs currently in ChromaDB for this collection
+            existing = collection.get(include=[])  # Only fetch IDs, no embeddings
+            chroma_ids = set(existing["ids"]) if existing["ids"] else set()
+
+            # DELETE zombie records (in ChromaDB but deleted from SQLite)
+            to_delete = chroma_ids - db_ids
+            if to_delete:
+                collection.delete(ids=list(to_delete))
+                print(f"   🗑️ ChromaDB [{entity_type}]: Removed {len(to_delete)} zombie records.")
+
+            # ADD new records (in SQLite but not in ChromaDB)
+            to_add_ids = db_ids - chroma_ids
+            if to_add_ids:
+                new_rows = [row for row in rows if str(row.id) in to_add_ids]
+                docs = [make_doc(row) for row in new_rows]
+                metas = [make_meta(row) for row in new_rows]
+                ids = [str(row.id) for row in new_rows]
+                
+                # Encode in batches to avoid memory spikes on large catalogs
+                embeddings = self.model.encode(docs, batch_size=64, show_progress_bar=False)
+                
+                collection.add(
+                    ids=ids,
+                    embeddings=embeddings.tolist(),
+                    documents=docs,
+                    metadatas=metas
                 )
+                print(f"   ✅ ChromaDB [{entity_type}]: Added {len(to_add_ids)} new records.")
 
-        if entity_type == "product":
-            self.product_index = index
-            self.product_data = current_data
-        else:
-            self.customer_index = index
-            self.customer_data = current_data
-
-    def search(self, entity_type, query, limit=3):
-        # --- NEW: Check Readiness ---
+    def search(self, entity_type, query, limit=5):
+        """
+        Main search method
+        Returns STRUCTURED DICT (not a display string) so tools can use IDs programmatically.
+        """
         if not self.is_ready:
             if self.is_loading:
-                return "⏳ **AI System is warming up...**\nPlease try again in 30 seconds. (Downloading models in background)"
+                return {"error": "warming_up", "message": "⏳ AI System is warming up... Please try in 30 seconds."}
             if self.load_error:
-                return f"❌ **AI System Failed to Load:**\n{self.load_error}"
-            return "❌ **AI System is Offline**"
+                return {"error": "load_failed", "message": f"❌ AI System failed: {self.load_error}"}
+            return {"error": "offline", "message": "❌ AI System is offline."}
 
-        # --- Standard Logic ---
-        index = self.product_index if entity_type == "product" else self.customer_index
-        data = self.product_data if entity_type == "product" else self.customer_data
+        collection = self.collections.get(entity_type)
+        if collection is None or collection.count() == 0:
+            return {"error": "empty", "message": f"No {entity_type}s indexed yet."}
 
-        if index is None or not data:
-            return f"No {entity_type}s indexed yet."
+        results = collection.query(
+            query_texts=[query],
+            n_results=min(limit, collection.count()),
+            include=["metadatas", "distances", "documents"]
+        )
 
-        vec = self.model.encode([query])
-        distances, indices = index.search(np.array(vec).astype("float32"), limit)
+        matches = []
+        
+        if not results["metadatas"] or not results["metadatas"][0]:
+            return {"error": "empty", "message": f"No {entity_type} matches found."}
+            
+        metadatas = results["metadatas"][0]
+        distances = results["distances"][0]
 
-        results = []
-        for i, idx in enumerate(indices[0]):
-            if idx < 0 or idx >= len(data):
-                continue
+        for meta, dist in zip(metadatas, distances):
+            # ChromaDB cosine distance: 0 = identical, 2 = opposite
+            # Convert to similarity percentage
+            similarity = round((1 - dist) * 100, 1)
+            matches.append({
+                **meta,
+                "similarity": similarity
+            })
 
-            item = data[idx]
-            dist = distances[0][i]
-            confidence = max(0, 100 - (dist * 40))
+        return {
+            "entity_type": entity_type,
+            "query": query,
+            "count": len(matches),
+            "matches": matches
+        }
 
-            results.append({"match": item, "confidence": round(confidence, 1)})
+    def search_display(self, entity_type, query, limit=5):
+        """
+        Wrapper that returns a formatted display string.
+        Used only for the legacy chatbot text response where IDs aren't needed downstream.
+        """
+        result = self.search(entity_type, query, limit)
 
-        output = f"🔍 **Found {len(results)} matches for '{query}':**\n"
-        for r in results:
-            match = r["match"]
-            conf = r["confidence"]
+        if "error" in result:
+            return result["message"]
+
+        output = f"🔍 **Found {result['count']} matches for '{query}':**\n"
+        for m in result["matches"]:
+            sim = m["similarity"]
             if entity_type == "product":
-                output += f"- [ID: {match['id']}] **{match['p_name']} {match['v_name']}** (Stock: {match['current_stock']}) | Confidence: {conf}%\n"
-            else:
-                output += f"- [ID: {match['id']}] **{match['name']}** (Mobile: {match['mobile']}) | Confidence: {conf}%\n"
+                output += (f"- [ID: {m['variant_id']}] **{m['product_name']} {m['variant_name']}** "
+                           f"[{m['category']}] (Stock: {m['current_stock']}) | Match: {sim}%\n")
+            elif entity_type == "customer":
+                output += f"- [ID: {m['customer_id']}] **{m['name']}** (Mobile: {m['mobile']}) | Match: {sim}%\n"
+            elif entity_type == "supplier":
+                output += f"- [ID: {m['supplier_id']}] **{m['name']}** (Mobile: {m['mobile']}) | Match: {sim}%\n"
         return output

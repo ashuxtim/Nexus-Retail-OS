@@ -212,19 +212,26 @@ class AnalyticsEngine:
             ml_store_path = os.path.join(self.stockout_ai.base_dir, "ml_store")
             print(f"🎯 Target Directory: {ml_store_path}")
 
-            # --- STEP 2: THE NUCLEAR OPTION (Delete Everything) ---
+            # --- STEP 2: THE NUCLEAR OPTION (Delete Everything Except Chroma) ---
             if os.path.exists(ml_store_path):
                 try:
-                    shutil.rmtree(ml_store_path)
-                    print(f"   🗑️  SUCCESS: Deleted entire 'ml_store' folder.")
+                    for item in os.listdir(ml_store_path):
+                        if item == "chroma":
+                            continue
+                        item_path = os.path.join(ml_store_path, item)
+                        if os.path.isdir(item_path):
+                            shutil.rmtree(item_path)
+                        else:
+                            os.remove(item_path)
+                    print(f"   🗑️  SUCCESS: Cleared 'ml_store' folder (preserved chroma).")
                 except Exception as e:
-                    print(f"   ❌ Error deleting folder: {e}")
+                    print(f"   ❌ Error clearing folder: {e}")
             else:
                 print(f"   ⚠️  'ml_store' folder not found (Clean start).")
 
-            # --- STEP 3: RECREATE THE EMPTY FOLDER ---
+            # --- STEP 3: FORECAST/CACHE FOLDERS (Will recreate dynamically) ---
             os.makedirs(ml_store_path, exist_ok=True)
-            print(f"   ✨ Recreated empty 'ml_store' directory.")
+            print(f"   ✨ Ensured 'ml_store' directory exists.")
 
             # Invalidate in-memory Python objects
             if hasattr(self.stockout_ai, "cache") and hasattr(

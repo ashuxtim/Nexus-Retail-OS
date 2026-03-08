@@ -75,11 +75,13 @@ const PrintReceiptContent = React.forwardRef(({ data, storeConfig }, ref) => {
 // --- Smart Search Select (UPDATED FOR LOADING STATE) ---
 function SmartSearchSelect({
     placeholder, data, onSelect, valueDisplay, labelKey, subLabelKey,
-    nextRef, allowCreate = false, onCreate, isLoading
+    nextRef, allowCreate = false, onCreate, isLoading, fetcher
 }) {
     const [query, setQuery] = useState("");
     const [isOpen, setIsOpen] = useState(false);
     const [highlightedIndex, setHighlightedIndex] = useState(0);
+    const [asyncResults, setAsyncResults] = useState([]);
+    const [isFetching, setIsFetching] = useState(false);
     const wrapperRef = useRef(null);
     const inputRef = useRef(null);
     const listRef = useRef(null);
@@ -90,30 +92,52 @@ function SmartSearchSelect({
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
+    useEffect(() => {
+        if (!fetcher) return;
+        if (!query) {
+            setAsyncResults([]);
+            return;
+        }
+        let active = true;
+        setIsFetching(true);
+        fetcher(query).then(res => {
+            if (active) {
+                setAsyncResults(res);
+                setIsFetching(false);
+            }
+        });
+        return () => { active = false; };
+    }, [query, fetcher]);
+
     const results = useMemo(() => {
         if (!query) return [];
-        const lowerQuery = query.toLowerCase();
+        let sorted = [];
 
-        const matches = data.filter(item => {
-            const mainLabel = item[labelKey]?.toString().toLowerCase() || "";
-            const subLabel = item[subLabelKey]?.toString().toLowerCase() || "";
-            return mainLabel.includes(lowerQuery) || subLabel.includes(lowerQuery);
-        });
+        if (fetcher) {
+            sorted = [...asyncResults];
+        } else {
+            const lowerQuery = query.toLowerCase();
+            const matches = data.filter(item => {
+                const mainLabel = item[labelKey]?.toString().toLowerCase() || "";
+                const subLabel = item[subLabelKey]?.toString().toLowerCase() || "";
+                return mainLabel.includes(lowerQuery) || subLabel.includes(lowerQuery);
+            });
 
-        const sorted = matches.sort((a, b) => {
-            const aLabel = a[labelKey]?.toString().toLowerCase() || "";
-            const bLabel = b[labelKey]?.toString().toLowerCase() || "";
-            if (aLabel.startsWith(lowerQuery) && !bLabel.startsWith(lowerQuery)) return -1;
-            if (!aLabel.startsWith(lowerQuery) && bLabel.startsWith(lowerQuery)) return 1;
-            return aLabel.localeCompare(bLabel);
-        }).slice(0, 50);
+            sorted = matches.sort((a, b) => {
+                const aLabel = a[labelKey]?.toString().toLowerCase() || "";
+                const bLabel = b[labelKey]?.toString().toLowerCase() || "";
+                if (aLabel.startsWith(lowerQuery) && !bLabel.startsWith(lowerQuery)) return -1;
+                if (!aLabel.startsWith(lowerQuery) && bLabel.startsWith(lowerQuery)) return 1;
+                return aLabel.localeCompare(bLabel);
+            }).slice(0, 50);
+        }
 
         if (allowCreate && query.trim().length > 0) {
             sorted.push({ _special: 'create', [labelKey]: `+ Add New: "${query}"`, [subLabelKey]: "Create and select this customer", rawQuery: query });
         }
 
         return sorted;
-    }, [data, query, labelKey, subLabelKey, allowCreate]);
+    }, [data, query, labelKey, subLabelKey, allowCreate, fetcher, asyncResults]);
 
     useEffect(() => { setHighlightedIndex(0); }, [results]);
 
@@ -150,7 +174,7 @@ function SmartSearchSelect({
                 />
 
                 {/* CONDITIONAL ICON: Spinner if loading, Search if ready */}
-                {isLoading ? (
+                {isLoading || isFetching ? (
                     <Loader2 className="absolute left-3 top-2.5 h-4 w-4 animate-spin text-muted-foreground" />
                 ) : (
                     <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -234,6 +258,51 @@ export default function AddSalePage() {
     const priceRef = useRef(null);
     const addBtnRef = useRef(null);
     const mobileRef = useRef(null);
+
+    const searchProductsAPI = async (q) => {
+        try {
+            const res = await fetch(`http://127.0.0.1:8000/api/search?q=${encodeURIComponent(q)}&type=product`);
+            if (!res.ok) throw new Error("HTTP Error");
+            const data = await res.json();
+            if (data && data.success) {
+                return (data.results || []).map(r => ({
+                    ...r,
+                    id: r.id,
+                    full_name: `${r.product_name} - ${r.variant_name}`,
+                    current_stock: r.stock,
+                    current_stock_label: `Stock: ${r.stock}`
+                }));
+            }
+            throw new Error("Backend not ready");
+        } catch (e) {
+            console.warn("Fallback to IPC for products", e);
+            const prodRes = await window.api.getProducts({ page: 1, limit: 100, search: q });
+            const flatProducts = [];
+            if (prodRes) prodRes.forEach(p => p.variants?.forEach(v => flatProducts.push({ ...v, full_name: `${p.name} - ${v.name}`, product_name: p.name, current_stock_label: `Stock: ${v.current_stock}` })));
+            return flatProducts;
+        }
+    };
+
+    const searchCustomersAPI = async (q) => {
+        try {
+            const res = await fetch(`http://127.0.0.1:8000/api/search?q=${encodeURIComponent(q)}&type=customer`);
+            if (!res.ok) throw new Error("HTTP Error");
+            const data = await res.json();
+            if (data && data.success) {
+                return (data.results || []).map(r => ({
+                    ...r,
+                    id: r.id,
+                    name: r.name,
+                    mobile: r.mobile
+                }));
+            }
+            throw new Error("Backend not ready");
+        } catch (e) {
+            console.warn("Fallback to IPC for customers", e);
+            const custRes = await window.api.getCustomersPaginated(100, 0, q);
+            return custRes?.data || [];
+        }
+    };
 
     useEffect(() => {
         const loadMasterData = async () => {
@@ -437,7 +506,8 @@ export default function AddSalePage() {
                                         onSelect={setSelectedCustomer}
                                         allowCreate={true}
                                         onCreate={handleQuickCreate}
-                                        isLoading={loadingData} // Pass loading state
+                                        isLoading={loadingData}
+                                        fetcher={searchCustomersAPI}
                                     />
                                 </TabsContent>
                                 <TabsContent value="new" className="space-y-3">
@@ -466,7 +536,8 @@ export default function AddSalePage() {
                                     valueDisplay={selectedVariant ? selectedVariant.full_name : ""}
                                     onSelect={setSelectedVariant}
                                     nextRef={qtyRef}
-                                    isLoading={loadingData} // Pass loading state
+                                    isLoading={loadingData}
+                                    fetcher={searchProductsAPI}
                                 />
                             </div>
                             <div className="grid grid-cols-2 gap-4">

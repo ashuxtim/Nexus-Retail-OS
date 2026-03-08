@@ -27,12 +27,14 @@ def set_context(engine, search_engine_ref, analytics_cache_ref):
 @tool
 def search_catalog_tool(search_term: str, category: str = "product"):
     """
-    SEARCH ENGINE. Use this FIRST when user asks 'Do we have X?' or 'Find X'.
-    category: 'product' or 'customer'.
+    SEARCH ENGINE. Use this FIRST when user asks 'Do we have X?' or 'Find X' or 'Who supplies X'.
+    category: 'product', 'customer', or 'supplier'.
+    For deep analysis (stockout, churn, basket), use the specialized tools instead.
     """
     if not SEARCH_ENGINE:
         return "Search Engine is still loading..."
-    return SEARCH_ENGINE.search(category, search_term, limit=10)
+    
+    return SEARCH_ENGINE.search_display(category, search_term, limit=10)
 
 
 @tool
@@ -116,7 +118,311 @@ def get_market_insights_tool():
         return f"🛒 **Shopping Patterns:**\n{ANALYTICS_CACHE.get('market_basket', 'Analysis pending...')}"
 
 
+# --- NEW PRODUCT-SPECIFIC ML TOOLS (Phase 2) ---
+
+@tool
+def get_product_stockout_tool(product_name: str) -> str:
+    """
+    Finds all variants matching a product name/category and returns Monte Carlo
+    stockout predictions for each. Use this when the user asks about when a 
+    product will run out, stock finishing, or restocking urgency.
+    
+    Examples: "when will chips finish", "cold drinks running low", 
+              "which biscuits need restock", "dairy stock status"
+    """
+    if not SEARCH_ENGINE or not getattr(SEARCH_ENGINE, "is_ready", True):
+        return "⏳ Search engine warming up. Try again in 30 seconds."
+
+    # Step 1: Resolve entity name → variant IDs via ChromaDB
+    # If search() returns dict, great. If it returns text, Phase 1 is missing, but let's assume Phase 1 is done.
+    search_result = SEARCH_ENGINE.search("product", product_name, limit=10)
+    
+    # Handle both new dictionary format and fallback text format
+    if isinstance(search_result, str):
+        return f"Warning: Search engine returned text. Ensure Phase 1 ChromaDB migration is active. Result: {search_result}"
+
+    if "error" in search_result:
+        return search_result["message"]
+
+    if not search_result.get("matches"):
+        return f"No products found matching '{product_name}'."
+
+    variant_ids = [m["variant_id"] for m in search_result["matches"] if "variant_id" in m]
+    
+    if not variant_ids:
+         return f"Resolved '{product_name}' but could not extract variant IDs. Check vector store format."
+
+    # Step 2: Get Monte Carlo predictions
+    try:
+        from models.stockout.predictor import StockoutPredictor
+        from core import state as _state
+        import concurrent.futures
+
+        predictor = StockoutPredictor(
+            db_engine=_state.raw_engine,
+            config={"n_simulations": 10000, "forecast_days": 30}
+        )
+        
+        # Execute with 30-second timeout guard
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(predictor.predict_stockouts, limit=500)
+            try:
+                all_predictions = future.result(timeout=30)
+            except concurrent.futures.TimeoutError:
+                return (f"⏳ Stockout predictions are being calculated (Monte Carlo simulation running). "
+                        f"Basic stock info:\n" + 
+                        "\n".join([f"• {m.get('product_name', '')} {m.get('variant_name', '')}: {m.get('current_stock', 0)} units" 
+                                   for m in search_result["matches"]]))
+
+        # Filter to only the variants we found
+        relevant = [p for p in all_predictions if p["variant_id"] in variant_ids]
+
+    except Exception as e:
+        return f"❌ Could not fetch stockout predictions: {e}"
+
+    if not relevant:
+        # Fallback: return basic stock info from search results
+        report = f"📦 **{product_name.title()} — Stock Status:**\n\n"
+        for m in search_result["matches"]:
+            report += f"• **{m.get('product_name', '')} {m.get('variant_name', '')}** — {m.get('current_stock', 0)} units in stock\n"
+        report += "\n⚠️ Stockout prediction not available for these items yet."
+        return report
+
+    # Step 3: Format enriched answer
+    report = f"📦 **{product_name.title()} — Stockout Forecast ({len(relevant)} variants):**\n\n"
+    
+    # Sort by urgency
+    relevant.sort(key=lambda x: x.get("metrics", {}).get("days_until_stockout", 999))
+    
+    for p in relevant:
+        name = p.get("product_name", f"Variant {p['variant_id']}")
+        days = p.get("metrics", {}).get("days_until_stockout", "N/A")
+        stock = p.get("current_stock", "?")
+        risk = p.get("risk_level", "unknown").upper()
+        rec = p.get("recommendation", "")
+        
+        risk_emoji = {"CRITICAL": "🔴", "HIGH": "🟠", "MEDIUM": "🟡", "LOW": "🟢"}.get(risk, "⚪")
+        
+        report += f"{risk_emoji} **{name}** — {stock} units left\n"
+        if isinstance(days, (int, float)):
+            report += f"   Runs out in: **{days:.0f} days** | Risk: {risk}\n"
+        if rec:
+            report += f"   Recommendation: {rec}\n"
+        report += "\n"
+
+    return report
+
+
+@tool
+def get_product_basket_tool(product_name: str) -> str:
+    """
+    Finds what products are frequently bought together with the given product.
+    Uses FP-Growth market basket analysis results.
+    
+    Examples: "what sells with Maggi", "cross-sell for Lays", 
+              "what goes with bread", "combo suggestions for milk"
+    """
+    if not SEARCH_ENGINE or not getattr(SEARCH_ENGINE, "is_ready", True):
+        return "⏳ Search engine warming up."
+
+    # Step 1: Resolve product name
+    search_result = SEARCH_ENGINE.search("product", product_name, limit=5)
+    
+    if isinstance(search_result, str):
+        return f"Warning: Search engine returned text. Ensure Phase 1 ChromaDB migration is active. Result: {search_result}"
+
+    if "error" in search_result:
+        return search_result["message"]
+
+    if not search_result.get("matches"):
+        return f"No products found matching '{product_name}'."
+
+    # Get the canonical product name from the best match
+    best_match = search_result["matches"][0]
+    canonical_name = best_match.get("product_name", product_name)
+    variant_name = best_match.get("variant_name", "")
+
+    # Step 2: Get FP-Growth rules from analytics cache
+    try:
+        from analytics import AnalyticsEngine
+        from core import state as _state
+
+        analytics = AnalyticsEngine(_state.raw_engine, base_dir=_state.BASE_DIR)
+        dashboard = analytics.get_dashboard_metrics()
+        dash_data = dashboard.get("data", dashboard)
+        mb = dash_data.get("market_basket", {})
+        rules = mb.get("rules", []) if isinstance(mb, dict) else []
+
+    except Exception as e:
+        return f"❌ Could not fetch market basket data: {e}"
+
+    if not rules:
+        return f"🛒 Market basket analysis not ready yet. Check back after the analytics pipeline runs."
+
+    # Step 3: Filter rules where this product appears as antecedent
+    search_term = canonical_name.lower()
+    matching_rules = []
+    
+    for rule in rules:
+        ant = rule.get("antecedent", [])
+        ant_str = ant[0] if isinstance(ant, list) and ant else str(ant)
+        if search_term in ant_str.lower():
+            matching_rules.append(rule)
+
+    if not matching_rules:
+        return (f"🛒 No frequent buying patterns found for **{canonical_name}** yet.\n"
+                f"This may mean it hasn't been sold enough times to establish patterns, "
+                f"or the market basket cache needs to refresh.")
+
+    # Step 4: Format results
+    report = f"🛒 **What sells with {canonical_name} {variant_name}:**\n\n"
+    for i, rule in enumerate(matching_rules[:8], 1):
+        ant = rule.get("antecedent", ["?"])
+        con = rule.get("consequent", ["?"])
+        conf = rule.get("confidence", 0)
+        lift = rule.get("lift", 0)
+        ant_str = ant[0] if isinstance(ant, list) else str(ant).strip("[]'")
+        con_str = con[0] if isinstance(con, list) else str(con).strip("[]'")
+        report += f"{i}. **{ant_str}** → **{con_str}** | Confidence: {conf:.0%} | Lift: {lift:.2f}\n"
+
+    report += f"\n💡 *Place these products near {canonical_name} to boost sales.*"
+    return report
+
+
+@tool
+def get_customer_churn_for_product_tool(product_name: str) -> str:
+    """
+    Finds customers who have bought a specific product and checks their churn risk.
+    Cross-references product buyers with XGBoost churn predictions.
+    
+    Examples: "are Lays buyers at churn risk", "which chips customers are leaving",
+              "churn risk for customers who buy bread", "loyal buyers of Maggi"
+    """
+    if not SEARCH_ENGINE or not getattr(SEARCH_ENGINE, "is_ready", True):
+        return "⏳ Search engine warming up."
+
+    # Step 1: Resolve product to variant IDs
+    search_result = SEARCH_ENGINE.search("product", product_name, limit=10)
+    
+    if isinstance(search_result, str):
+        return f"Warning: Search engine returned text. Ensure Phase 1 ChromaDB migration is active. Result: {search_result}"
+
+    if "error" in search_result:
+        return search_result["message"]
+
+    if not search_result.get("matches"):
+        return f"No products found matching '{product_name}'."
+
+    variant_ids = [m["variant_id"] for m in search_result["matches"] if "variant_id" in m]
+    if not variant_ids:
+        return "Could not extract variant IDs from search results."
+    
+    canonical = search_result["matches"][0].get("product_name", product_name)
+
+    # Step 2: Find customers who have bought these variants
+    try:
+        from sqlalchemy import text
+        from core import state as _state
+
+        placeholders = ",".join([str(vid) for vid in variant_ids])
+        with _state.raw_engine.connect() as conn:
+            buyer_rows = conn.execute(text(f"""
+                SELECT DISTINCT c.id, c.name
+                FROM customer c
+                JOIN credit_sale cs ON c.id = cs.customer_id
+                JOIN credit_sale_item csi ON cs.id = csi.sale_id
+                WHERE csi.variant_id IN ({placeholders})
+            """)).fetchall()
+
+    except Exception as e:
+        return f"❌ Could not fetch buyer data: {e}"
+
+    if not buyer_rows:
+        return f"No customer purchase history found for '{canonical}'."
+
+    buyer_ids = {row.id for row in buyer_rows}
+
+    # Step 3: Get XGBoost churn predictions and filter to these buyers
+    try:
+        from analytics import AnalyticsEngine
+        from core import state as _state
+
+        analytics = AnalyticsEngine(_state.raw_engine, base_dir=_state.BASE_DIR)
+        dashboard = analytics.get_dashboard_metrics()
+        dash_data = dashboard.get("data", dashboard)
+        all_churn = dash_data.get("churn_risk", [])
+
+    except Exception as e:
+        return f"❌ Could not fetch churn predictions: {e}"
+
+    # Filter churn results to only buyers of this product
+    at_risk = [
+        c for c in all_churn
+        if c.get("customer_id") in buyer_ids and c.get("risk_score", 0) >= 50
+    ]
+    safe = [
+        c for c in all_churn
+        if c.get("customer_id") in buyer_ids and c.get("risk_score", 0) < 50
+    ]
+
+    report = f"👥 **Churn Risk — Buyers of {canonical} ({len(buyer_ids)} customers total):**\n\n"
+    
+    if at_risk:
+        at_risk.sort(key=lambda x: x.get("risk_score", 0), reverse=True)
+        report += f"🔴 **At Risk ({len(at_risk)} customers):**\n"
+        for c in at_risk[:10]:
+            report += (f"• **{c.get('name')}** — Risk: {c.get('risk_score', 0)}% | "
+                      f"Inactive: {c.get('days_inactive', 0)} days | {c.get('trend', '')}\n")
+    else:
+        report += "✅ No high-risk churn detected among these buyers.\n"
+
+    report += f"\n✅ **Loyal Buyers ({len(safe)} customers):** Regularly purchasing, low churn risk.\n"
+    report += f"\n💡 *Consider a loyalty offer for at-risk {canonical} buyers to retain them.*"
+    return report
+
+
+@tool
+def resolve_entity_tool(name: str, entity_type: str = "product") -> str:
+    """
+    Resolves a fuzzy name to exact database records using semantic search.
+    Returns IDs and metadata. Use this when you need to find the exact ID 
+    of a product, customer, or supplier before running a SQL query or analysis.
+    
+    entity_type: 'product', 'customer', or 'supplier'
+    
+    Examples: "resolve Maggi to product ID", "find supplier ID for Haldiram",
+              "get customer ID for Ramesh Sharma"
+    """
+    if not SEARCH_ENGINE or not getattr(SEARCH_ENGINE, "is_ready", True):
+        return "⏳ Search engine warming up."
+
+    result = SEARCH_ENGINE.search(entity_type, name, limit=5)
+    
+    if isinstance(result, str):
+        return f"Warning: Search engine returned text. Ensure Phase 1 ChromaDB migration is active. Result: {result}"
+
+    if "error" in result:
+        return result["message"]
+
+    if not result.get("matches"):
+        return f"No {entity_type} found matching '{name}'."
+
+    lines = [f"🔍 **Resolved '{name}' → {entity_type} matches:**\n"]
+    for m in result["matches"]:
+        sim = m.get('similarity', '?')
+        if entity_type == "product":
+            lines.append(f"- ID: {m.get('variant_id')} | {m.get('product_name')} {m.get('variant_name')} "
+                        f"| Category: {m.get('category')} | Stock: {m.get('current_stock')} | Match: {sim}%")
+        elif entity_type == "customer":
+            lines.append(f"- ID: {m.get('customer_id')} | {m.get('name')} | Mobile: {m.get('mobile')} | Match: {sim}%")
+        elif entity_type == "supplier":
+            lines.append(f"- ID: {m.get('supplier_id')} | {m.get('name')} | Mobile: {m.get('mobile')} | Match: {sim}%")
+
+    return "\n".join(lines)
+
+
 # --- COMBINED BUSINESS OVERVIEW (Single tool for strategic questions) ---
+
 
 
 @tool

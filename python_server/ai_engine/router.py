@@ -99,12 +99,14 @@ def route_query(user_text: str):
         r"\bhow\s+can\b",
         r"\bshould\s+i\b",
         r"\bwhy\b",
-        r"\bwhich\s+(?:customer|product|item)\b",
+        r"\bwhich\b",
         r"\bhelp\s+me\b",
         r"\bincrease\b",
         r"\breduce\b",
         r"\bimprove\b",
         r"\boptimize\b",
+        r"\bare\s+any\b",
+        r"\bwhat\s+do\b",
     ]
     if any(re.search(sig, lower) for sig in COMPLEX_SIGNALS):
         return None, None
