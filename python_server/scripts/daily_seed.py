@@ -25,7 +25,7 @@ else:
     _BASE = os.path.join(os.path.expanduser("~"), ".config", "NexusRetailOS")
 DB_PATH = os.path.join(_BASE, "nexus.db")
 
-fake = Faker("en_IN")
+fake = Faker("hi_IN")
 rng = np.random.default_rng()
 
 

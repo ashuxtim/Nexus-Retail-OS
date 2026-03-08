@@ -19,6 +19,7 @@ const { initSchema, getDB } = require('./database/db_manager');
 const cache = require('./database/cacheManager');
 const WorkerHandler = require('./workers/workerHandler');
 const { runMigrations } = require('./database/migrationManager');
+const { fuzzySearch } = require('./database/search');
 
 // --- Repositories ---
 const ProductRepo = require('./database/repositories/ProductRepository');
@@ -494,6 +495,18 @@ ipcMain.handle('worker:search-products', (e, q) => WorkerHandler.searchProducts(
 ipcMain.handle('worker:search-suppliers', (e, q, l) => WorkerHandler.searchSuppliers(q, l));
 ipcMain.handle('worker:search-variants', (e, q, l) => WorkerHandler.searchVariants(q, l));
 ipcMain.handle('app:global-search', (e, term) => WorkerHandler.searchGlobal(term));
+
+// Unified fuzzy search — used by all search surfaces in the app
+ipcMain.handle('fuzzy-search', (event, { query, type, limit = 20 }) => {
+    try {
+        const db = getDB();
+        if (!db) return [];
+        return fuzzySearch(db, query, type, limit);
+    } catch (e) {
+        console.error('fuzzy-search IPC error:', e);
+        return [];
+    }
+});
 
 ipcMain.handle('app:export-ledger', async (e, s, end) => {
   const { canceled, filePath } = await dialog.showSaveDialog({

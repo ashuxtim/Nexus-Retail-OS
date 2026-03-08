@@ -4,7 +4,7 @@ import { Virtuoso } from 'react-virtuoso';
 import {
     Search, Package, User, ShoppingBag, Truck, ArrowRight, Loader2,
     Eye, FileText, ArrowLeftRight, CornerDownLeft, PlusCircle, Command,
-    ArrowUp, ArrowDown
+    ArrowUp, ArrowDown, UserPlus
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -26,7 +26,7 @@ export default function SearchResultsPage() {
     const navigate = useNavigate();
     const q = searchParams.get('q') || '';
 
-    const [results, setResults] = useState({ products: [], customers: [], sales: [], purchases: [] });
+    const [results, setResults] = useState({ products: [], customers: [], suppliers: [], sales: [], purchases: [] });
     const [loading, setLoading] = useState(false);
 
     // --- ZONE-BASED NAVIGATION STATE ---
@@ -46,7 +46,7 @@ export default function SearchResultsPage() {
     const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
 
     useEffect(() => {
-        if (!q) { setResults({ products: [], customers: [], sales: [], purchases: [] }); return; }
+        if (!q) { setResults({ products: [], customers: [], suppliers: [], sales: [], purchases: [] }); return; }
 
         let active = true;
         setLoading(true);
@@ -56,9 +56,20 @@ export default function SearchResultsPage() {
 
         const timer = setTimeout(async () => {
             try {
-                const data = await window.api.searchGlobal(q);
+                const [products, customers, suppliers, globalData] = await Promise.all([
+                    window.api.fuzzySearch({ query: q, type: 'product', limit: 20 }),
+                    window.api.fuzzySearch({ query: q, type: 'customer', limit: 20 }),
+                    window.api.fuzzySearch({ query: q, type: 'supplier', limit: 20 }),
+                    window.api.searchGlobal(q)
+                ]);
                 if (active) {
-                    setResults(data || { products: [], customers: [], sales: [], purchases: [] });
+                    setResults({ 
+                        products, 
+                        customers, 
+                        suppliers, 
+                        sales: globalData?.sales || [], 
+                        purchases: globalData?.purchases || [] 
+                    });
                 }
             } catch (e) { console.error(e); }
             finally { if (active) setLoading(false); }
@@ -70,13 +81,14 @@ export default function SearchResultsPage() {
     const availableZones = useMemo(() => {
         const zones = [];
         if (results.customers?.length > 0) zones.push({ id: 'customers', data: results.customers, label: 'Customers', icon: User, color: 'text-blue-600', bgColor: 'bg-blue-500/10' });
+        if (results.suppliers?.length > 0) zones.push({ id: 'suppliers', data: results.suppliers, label: 'Suppliers', icon: UserPlus, color: 'text-indigo-600', bgColor: 'bg-indigo-500/10' });
         if (results.products?.length > 0) zones.push({ id: 'products', data: results.products, label: 'Products', icon: Package, color: 'text-purple-600', bgColor: 'bg-purple-500/10' });
         if (results.sales?.length > 0) zones.push({ id: 'sales', data: results.sales, label: 'Sales', icon: ShoppingBag, color: 'text-green-600', bgColor: 'bg-green-500/10' });
         if (results.purchases?.length > 0) zones.push({ id: 'purchases', data: results.purchases, label: 'Purchases', icon: Truck, color: 'text-orange-600', bgColor: 'bg-orange-500/10' });
         return zones;
     }, [results]);
 
-    const total = (results.customers?.length || 0) + (results.products?.length || 0) + (results.sales?.length || 0) + (results.purchases?.length || 0);
+    const total = (results.customers?.length || 0) + (results.products?.length || 0) + (results.suppliers?.length || 0) + (results.sales?.length || 0) + (results.purchases?.length || 0);
 
     // --- AUTO-SCROLL PAGE TO ACTIVE ZONE ---
     useEffect(() => {
@@ -137,6 +149,7 @@ export default function SearchResultsPage() {
                 if (!item) return;
 
                 if (currentZone.id === 'customers') navigate(`/customer/${item.id}`);
+                else if (currentZone.id === 'suppliers') navigate(`/suppliers`);
                 else if (currentZone.id === 'products') { setSelectedProduct(item); setIsProductOpen(true); }
                 else if (currentZone.id === 'sales') { setSelectedSale(item); setIsSaleOpen(true); }
                 else if (currentZone.id === 'purchases') handlePurchaseClick(item);
@@ -175,6 +188,17 @@ export default function SearchResultsPage() {
                         <p className="text-xs text-muted-foreground">{item.mobile || "No Contact"}</p>
                     </div>
                     {isSelected && <ArrowRight size={14} className="text-blue-600 animate-in slide-in-from-left-2 fade-in" />}
+                </div>
+            );
+        }
+        if (type === 'suppliers') {
+            return (
+                <div onClick={() => navigate(`/suppliers`)} className={commonClasses}>
+                    <div>
+                        <p className={`font-medium text-sm ${isSelected ? 'text-indigo-600' : 'text-foreground'}`}>{item.name}</p>
+                        <p className="text-xs text-muted-foreground">{item.mobile || "No Contact"}</p>
+                    </div>
+                    {isSelected && <ArrowRight size={14} className="text-indigo-600 animate-in slide-in-from-left-2 fade-in" />}
                 </div>
             );
         }

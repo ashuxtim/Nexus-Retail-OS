@@ -93,7 +93,7 @@ const AsyncSupplierSelect = memo(({
       
       setLoading(true);
       try {
-        const list = await window.api.searchSuppliersWorker(query, 20);
+        const list = await window.api.fuzzySearch({ query, type: 'supplier', limit: 20 });
         
         if (query.length > 1 && list.length === 0) {
           list.unshift({ _special: 'create', name: `+ Create "${query}"`, rawName: query });
@@ -265,16 +265,9 @@ const ProductSearchInput = memo(function ProductSearchInput({
     const timer = setTimeout(async () => {
       setLoading(true);
       try {
-        const res = await window.api.getProducts({ page: 1, limit: 50, search: query });
+        const res = await window.api.fuzzySearch({ query, type: 'product', limit: 50 });
         if (isActive) {
-          const flat = [];
-          if (res) {
-            res.forEach(p => {
-              p.variants?.forEach(v => {
-                flat.push({ ...v, product_name: p.name });
-              });
-            });
-          }
+          const flat = (res || []).map(v => ({ ...v, name: v.variant_name }));
           setResults(flat);
           setIsOpen(true);
           setHighlightedIndex(0);

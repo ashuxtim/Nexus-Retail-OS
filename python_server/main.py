@@ -53,7 +53,6 @@ from routes.settings import router as settings_router
 from routes.ai_chat import router as ai_chat_router
 from routes.media import router as media_router
 from routes.analytics import router as analytics_router
-from routes.search import router as search_router
 
 # ==============================================================================
 # 4. APP SETUP
@@ -74,7 +73,6 @@ app.include_router(settings_router)
 app.include_router(ai_chat_router)
 app.include_router(media_router)
 app.include_router(analytics_router)
-app.include_router(search_router)
 
 # --- Startup ---
 initialize_ai()

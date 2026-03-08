@@ -22,7 +22,7 @@ if (typeof window !== 'undefined') {
     }
 }
 
-const FETCH_LIMIT = 20000;
+
 
 // --- PRINT CONTENT (UNCHANGED) ---
 const PrintReceiptContent = React.forwardRef(({ data, storeConfig }, ref) => {
@@ -213,8 +213,6 @@ function SmartSearchSelect({
 
 export default function AddSalePage() {
     const [loadingData, setLoadingData] = useState(true);
-    const [allCustomers, setAllCustomers] = useState([]);
-    const [allProducts, setAllProducts] = useState([]);
 
     // --- LAZY INITIALIZATION FROM STORAGE (Fixes 0.1s blocking) ---
     const [mode, setMode] = useState(() => {
@@ -260,62 +258,17 @@ export default function AddSalePage() {
     const mobileRef = useRef(null);
 
     const searchProductsAPI = async (q) => {
-        try {
-            const res = await fetch(`http://127.0.0.1:8000/api/search?q=${encodeURIComponent(q)}&type=product`);
-            if (!res.ok) throw new Error("HTTP Error");
-            const data = await res.json();
-            if (data && data.success) {
-                return (data.results || []).map(r => ({
-                    ...r,
-                    id: r.id,
-                    full_name: `${r.product_name} - ${r.variant_name}`,
-                    current_stock: r.stock,
-                    current_stock_label: `Stock: ${r.stock}`
-                }));
-            }
-            throw new Error("Backend not ready");
-        } catch (e) {
-            console.warn("Fallback to IPC for products", e);
-            const prodRes = await window.api.getProducts({ page: 1, limit: 100, search: q });
-            const flatProducts = [];
-            if (prodRes) prodRes.forEach(p => p.variants?.forEach(v => flatProducts.push({ ...v, full_name: `${p.name} - ${v.name}`, product_name: p.name, current_stock_label: `Stock: ${v.current_stock}` })));
-            return flatProducts;
-        }
+        const results = await window.api.fuzzySearch({ query: q, type: 'product' });
+        return results;
     };
 
     const searchCustomersAPI = async (q) => {
-        try {
-            const res = await fetch(`http://127.0.0.1:8000/api/search?q=${encodeURIComponent(q)}&type=customer`);
-            if (!res.ok) throw new Error("HTTP Error");
-            const data = await res.json();
-            if (data && data.success) {
-                return (data.results || []).map(r => ({
-                    ...r,
-                    id: r.id,
-                    name: r.name,
-                    mobile: r.mobile
-                }));
-            }
-            throw new Error("Backend not ready");
-        } catch (e) {
-            console.warn("Fallback to IPC for customers", e);
-            const custRes = await window.api.getCustomersPaginated(100, 0, q);
-            return custRes?.data || [];
-        }
-    };
-
-    useEffect(() => {
+        const results = await window.api.fuzzySearch({ query: q, type: 'customer' });
+        return results;
+    };    useEffect(() => {
         const loadMasterData = async () => {
             setLoadingData(true);
             try {
-                const custRes = await window.api.getCustomersPaginated(FETCH_LIMIT, 0, "");
-                setAllCustomers((custRes?.data || []).sort((a, b) => a.name.localeCompare(b.name)));
-
-                const prodRes = await window.api.getProducts({ page: 1, limit: FETCH_LIMIT, search: "" });
-                const flatProducts = [];
-                if (prodRes) prodRes.forEach(p => p.variants?.forEach(v => flatProducts.push({ ...v, full_name: `${p.name} - ${v.name}`, product_name: p.name, current_stock_label: `Stock: ${v.current_stock}` })));
-                setAllProducts(flatProducts.sort((a, b) => a.full_name.localeCompare(b.full_name)));
-
                 const settings = await window.api.getLocalSettings();
                 if (settings) {
                     if (settings.store_config) setStoreConfig(settings.store_config);
@@ -498,7 +451,7 @@ export default function AddSalePage() {
                                 <TabsContent value="existing" className="space-y-3">
                                     <Label className="text-xs font-medium text-muted-foreground">Select Customer</Label>
                                     <SmartSearchSelect
-                                        data={allCustomers}
+                                        data={[]}
                                         labelKey="name"
                                         subLabelKey="mobile"
                                         placeholder="Search by Name or Mobile..."
@@ -529,7 +482,7 @@ export default function AddSalePage() {
                             <div className="space-y-2">
                                 <Label className="text-xs font-medium text-muted-foreground">Product Search</Label>
                                 <SmartSearchSelect
-                                    data={allProducts}
+                                    data={[]}
                                     labelKey="full_name"
                                     subLabelKey="current_stock_label"
                                     placeholder="Scan barcode or type name..."

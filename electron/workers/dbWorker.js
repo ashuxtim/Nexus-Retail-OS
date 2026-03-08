@@ -5,7 +5,7 @@ const db = new Database(workerData.dbPath);
 db.pragma('journal_mode = WAL');
 
 // INVARIANT: Worker must remain stateless or explicitly clear state on RESET_CACHE
-let internalCache = {}; 
+let internalCache = {};
 
 parentPort.on('message', (task) => {
   try {
@@ -18,7 +18,7 @@ parentPort.on('message', (task) => {
     } else if (task.type === 'SEARCH_VARIANTS') {
       handleVariantSearch(task.payload, task.id);
     } else if (task.type === 'RESET_CACHE') {
-      internalCache = {}; 
+      internalCache = {};
     }
   } catch (err) {
     if (task.type !== 'RESET_CACHE') {
@@ -31,13 +31,14 @@ parentPort.on('message', (task) => {
 
 function handleSearch(term, reqId) {
   const search = `%${term}%`;
+  const prefix = `${term}%`;
   const exact = term;
-  const LIMIT = 1000;
-  
+  const LIMIT = 50;
+
   // OPTIMIZATION: Check if input is a valid number.
   // If 'term' is "apple", isNumeric is false, and numericVal is -1 (so it matches nothing safely).
   const isNumeric = !isNaN(parseFloat(term)) && isFinite(term);
-  const numericVal = isNumeric ? term : -1; 
+  const numericVal = isNumeric ? term : -1;
 
   // 1. PRODUCTS
   // Removed CAST(v.price AS TEXT). Now uses direct numeric comparison if applicable.
@@ -51,7 +52,7 @@ function handleSearch(term, reqId) {
       OR (v.price = ? AND ? = 1)  -- Only check price if isNumeric is true (1)
       OR (p.id = ? AND ? = 1)     -- Only check ID if isNumeric is true (1)
     LIMIT ?
-  `).all(search, search, numericVal, isNumeric ? 1 : 0, numericVal, isNumeric ? 1 : 0, LIMIT);
+  `).all(prefix, prefix, numericVal, isNumeric ? 1 : 0, numericVal, isNumeric ? 1 : 0, LIMIT);
 
   // 2. CUSTOMERS
   const customers = db.prepare(`
@@ -59,7 +60,7 @@ function handleSearch(term, reqId) {
     WHERE name LIKE ? OR mobile LIKE ? OR address LIKE ? 
       OR (id = ? AND ? = 1)  -- ✅ Add this line
     LIMIT ?
-  `).all(search, search, search, numericVal, isNumeric ? 1 : 0, LIMIT);
+  `).all(prefix, prefix, prefix, numericVal, isNumeric ? 1 : 0, LIMIT);
 
 
   // 3. SALES
@@ -74,7 +75,7 @@ function handleSearch(term, reqId) {
     WHERE c.name LIKE ? OR s.sale_date LIKE ? OR (s.id = ? AND ? = 1)
     GROUP BY s.id 
     ORDER BY s.sale_date DESC LIMIT ?
-  `).all(search, search, numericVal, isNumeric ? 1 : 0, LIMIT);
+  `).all(prefix, search, numericVal, isNumeric ? 1 : 0, LIMIT);
 
   // 4. PURCHASES
   const purchases = db.prepare(`
@@ -99,7 +100,7 @@ function handleSearch(term, reqId) {
       (pi.id = ? AND ? = 1)
     ORDER BY pi.invoice_date DESC
     LIMIT ?
-  `).all(search, search, search, search, numericVal, isNumeric ? 1 : 0, LIMIT);
+  `).all(prefix, prefix, prefix, search, numericVal, isNumeric ? 1 : 0, LIMIT);
 
   parentPort.postMessage({ id: reqId, result: { products, customers, sales, purchases } });
 }
@@ -140,7 +141,7 @@ function handleSupplierSearch({ search = "", limit = 20 }, reqId) {
 
 function handleVariantSearch({ query = "", limit = 50 }, reqId) {
   const search = `%${query}%`;
-  
+
   // Same optimization here
   const isNumeric = !isNaN(parseFloat(query)) && isFinite(query);
   const numericVal = isNumeric ? query : -1;
@@ -168,7 +169,7 @@ function handleVariantSearch({ query = "", limit = 50 }, reqId) {
       p.name ASC, 
       v.name ASC
     LIMIT ?
-  `).all(search, search, numericVal, isNumeric?1:0, numericVal, isNumeric?1:0, numericVal, isNumeric?1:0, `${query}%`, limit);
+  `).all(search, search, numericVal, isNumeric ? 1 : 0, numericVal, isNumeric ? 1 : 0, numericVal, isNumeric ? 1 : 0, `${query}%`, limit);
 
   parentPort.postMessage({ id: reqId, result: results });
 }

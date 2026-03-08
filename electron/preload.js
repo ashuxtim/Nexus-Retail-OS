@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('api', {
   
   // Global Search
   searchGlobal: (term) => ipcRenderer.invoke('app:global-search', term),
+  fuzzySearch: (params) => ipcRenderer.invoke('fuzzy-search', params),
 
   // Dashboard
   getDashboardStats: () => ipcRenderer.invoke('dashboard:get-stats'),

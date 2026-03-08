@@ -33,6 +33,7 @@ const FETCH_LIMIT = 20000;
 // --- Refined Smart Search (Standardized) ---
 function SmartCustomerSearch({ onSelect, selectedName, data }) {
     const [query, setQuery] = useState("");
+    const [results, setResults] = useState([]);
     const [isOpen, setIsOpen] = useState(false);
     const [highlightedIndex, setHighlightedIndex] = useState(0);
     const wrapperRef = useRef(null);
@@ -46,24 +47,23 @@ function SmartCustomerSearch({ onSelect, selectedName, data }) {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    const results = useMemo(() => {
-        if (!query) return [];
-        const lowerQuery = query.toLowerCase();
-
-        const matches = data.filter(c => {
-            const name = c.name?.toLowerCase() || "";
-            const mobile = c.mobile?.toString() || "";
-            return name.includes(lowerQuery) || mobile.includes(lowerQuery);
-        });
-
-        return matches.sort((a, b) => {
-            const aName = a.name.toLowerCase();
-            const bName = b.name.toLowerCase();
-            if (aName.startsWith(lowerQuery) && !bName.startsWith(lowerQuery)) return -1; 
-            if (!aName.startsWith(lowerQuery) && bName.startsWith(lowerQuery)) return 1;  
-            return aName.localeCompare(bName);  
-        }).slice(0, 10);
-    }, [data, query]);
+    useEffect(() => {
+        if (!query) {
+            setResults([]);
+            return;
+        }
+        let active = true;
+        const search = async () => {
+            try {
+                const res = await window.api.fuzzySearch({ query, type: 'customer', limit: 10 });
+                if (active) setResults(res || []);
+            } catch (e) {
+                console.error(e);
+            }
+        };
+        const timer = setTimeout(search, 150);
+        return () => { active = false; clearTimeout(timer); };
+    }, [query]);
 
     useEffect(() => { setHighlightedIndex(0); }, [results]);
 
@@ -148,9 +148,6 @@ function SmartCustomerSearch({ onSelect, selectedName, data }) {
 }
 
 export default function CustomerPage() {
-    const [allCustomers, setAllCustomers] = useState([]);
-    const [loadingData, setLoadingData] = useState(true);
-
     const [newName, setNewName] = useState("");
     const [newMobile, setNewMobile] = useState("");
     const [newAddress, setNewAddress] = useState("");
@@ -160,23 +157,6 @@ export default function CustomerPage() {
     const [payAmount, setPayAmount] = useState("");
     const [isPaying, setIsPaying] = useState(false);
 
-    useEffect(() => {
-        const fetchAll = async () => {
-            setLoadingData(true);
-            try {
-                const res = await window.api.getCustomersPaginated(FETCH_LIMIT, 0, "");
-                let data = (res?.data && Array.isArray(res.data)) ? res.data : (Array.isArray(res) ? res : []);
-                setAllCustomers(data.sort((a,b) => a.name.localeCompare(b.name)));
-            } catch (e) {
-                console.error(e);
-                toast.error("Failed to load customer directory.");
-            } finally {
-                setLoadingData(false);
-            }
-        };
-        fetchAll();
-    }, []);
-
     const handleAdd = async () => {
         if (!newName) return toast.warning("Name required");
         setIsAdding(true);
@@ -184,7 +164,6 @@ export default function CustomerPage() {
             const res = await window.api.createCustomer({ name: newName, mobile: newMobile, address: newAddress });
             if (res.error) throw new Error(res.error);
             toast.success("Customer Created!");
-            setAllCustomers(prev => [...prev, res].sort((a,b) => a.name.localeCompare(b.name)));
             setNewName(""); setNewMobile(""); setNewAddress("");
         } catch (e) { toast.error(e.message); }
         finally { setIsAdding(false); }
@@ -198,13 +177,11 @@ export default function CustomerPage() {
             toast.success("Payment Recorded!");
             const newBalance = (selectedCustomer.balance || 0) - Number(payAmount);
             setSelectedCustomer(prev => ({ ...prev, balance: newBalance }));
-            setAllCustomers(prev => prev.map(c => c.id === selectedCustomer.id ? { ...c, balance: newBalance } : c));
             setPayAmount(""); 
         } catch (e) { toast.error(e.message); }
         finally { setIsPaying(false); }
     };
 
-    if (loadingData) return <div className="h-[calc(100vh-4rem)] flex flex-col items-center justify-center space-y-4"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /><p className="text-muted-foreground font-medium">Loading Customer Directory...</p></div>;
 
     return (
         <div className="max-w-[1600px] mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500 p-6 pb-20">
@@ -287,7 +264,6 @@ export default function CustomerPage() {
                         <div className="space-y-2">
                             <Label className="text-xs font-medium text-muted-foreground">Select Customer</Label>
                             <SmartCustomerSearch 
-                                data={allCustomers} 
                                 selectedName={selectedCustomer?.name} 
                                 onSelect={setSelectedCustomer}
                             />

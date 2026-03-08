@@ -107,11 +107,32 @@ const ProductPage = () => {
     try {
       const currentPage = reset ? 1 : page;
       
-      const data = await window.api.getProducts({ 
-        page: currentPage, 
-        limit: PAGE_SIZE,
-        search: searchTerm 
-      });
+      let data;
+      if (searchTerm) {
+          const rawVariants = await window.api.fuzzySearch({ query: searchTerm, type: 'product', limit: PAGE_SIZE });
+          // Group into parent products since ProductPage lists products, not flat variants
+          const grouped = {};
+          rawVariants.forEach(v => {
+              if (!grouped[v.product_id]) {
+                  grouped[v.product_id] = {
+                      id: v.product_id,
+                      name: v.product_name,
+                      category: v.category,
+                      variants: []
+                  };
+              }
+              if (!grouped[v.product_id].variants.find(existing => existing.id === v.id)) {
+                  grouped[v.product_id].variants.push({ ...v, name: v.variant_name });
+              }
+          });
+          data = Object.values(grouped);
+      } else {
+          data = await window.api.getProducts({ 
+            page: currentPage, 
+            limit: PAGE_SIZE,
+            search: "" 
+          });
+      }
       
       const newData = Array.isArray(data) ? data : [];
 
