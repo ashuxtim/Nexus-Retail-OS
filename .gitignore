@@ -48,6 +48,12 @@ python_server/*.log
 .vscode/
 python_server/cachedir/
 
+# Vector database
+python_server/ml_store/
+
+# Chroma files
+*.bin
+
 # --- Ignore local scripts and notes ---
 bugs.md
 merge_code.py

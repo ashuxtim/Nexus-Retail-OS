@@ -216,9 +216,10 @@ class AnalyticsEngine:
             if os.path.exists(ml_store_path):
                 try:
                     for item in os.listdir(ml_store_path):
-                        if item == "chroma":
-                            continue
                         item_path = os.path.join(ml_store_path, item)
+                        if item == "chroma":
+                            print("   ⏭️  Skipping ChromaDB directory (vector store preserved).")
+                            continue
                         if os.path.isdir(item_path):
                             shutil.rmtree(item_path)
                         else:

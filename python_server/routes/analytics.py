@@ -233,9 +233,21 @@ async def cleanup_expired_cache():
 
 @router.get("/health")
 async def health_check():
-    if state.AI_INIT_FAILED:
-        return {"status": "Init Failed"}
-    return {"status": "Active" if state.safety_guard else "Missing Keys"}
+    from core import state
+    search_status = "offline"
+    if hasattr(state, 'search_engine') and state.search_engine:
+        if state.search_engine.is_loading:
+            search_status = "warming_up"
+        elif state.search_engine.load_error:
+            search_status = "error"
+        elif not state.search_engine.is_ready:
+            search_status = "offline"
+            
+    return {
+        "status": "Active" if state.safety_guard else "Missing Keys",
+        "search_engine": search_status,
+        "ai_failed": state.AI_INIT_FAILED
+    }
 
 
 @router.get("/api/model/health")

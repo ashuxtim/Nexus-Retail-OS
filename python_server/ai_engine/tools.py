@@ -163,15 +163,20 @@ def get_product_stockout_tool(product_name: str) -> str:
         )
         
         # Execute with 30-second timeout guard
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(predictor.predict_stockouts, limit=500)
-            try:
-                all_predictions = future.result(timeout=30)
-            except concurrent.futures.TimeoutError:
-                return (f"⏳ Stockout predictions are being calculated (Monte Carlo simulation running). "
-                        f"Basic stock info:\n" + 
-                        "\n".join([f"• {m.get('product_name', '')} {m.get('variant_name', '')}: {m.get('current_stock', 0)} units" 
-                                   for m in search_result["matches"]]))
+        executor = concurrent.futures.ThreadPoolExecutor()
+        future = executor.submit(predictor.predict_stockouts, limit=500)
+        try:
+            all_predictions = future.result(timeout=30)
+            executor.shutdown(wait=False)
+        except concurrent.futures.TimeoutError:
+            executor.shutdown(wait=False)
+            return (f"⏳ Stockout predictions are being calculated (Monte Carlo simulation running). "
+                    f"Basic stock info:\n" + 
+                    "\n".join([f"• {m.get('product_name', '')} {m.get('variant_name', '')}: {m.get('current_stock', 0)} units" 
+                               for m in search_result["matches"]]))
+        except Exception as e:
+            executor.shutdown(wait=False)
+            return f"❌ Could not fetch stockout predictions: {e}"
 
         # Filter to only the variants we found
         relevant = [p for p in all_predictions if p["variant_id"] in variant_ids]

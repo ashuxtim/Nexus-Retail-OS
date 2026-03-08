@@ -55,9 +55,14 @@ class StockoutPredictor:
         if base_dir:
             self.base_dir = base_dir
         else:
+            import sys
             # Fallback to standard AppData location if not provided
-            appdata = os.getenv("APPDATA") or os.path.expanduser("~")
-            self.base_dir = os.path.join(appdata, "NexusRetailOS")
+            if "NEXUS_USER_DATA" in os.environ:
+                self.base_dir = os.environ["NEXUS_USER_DATA"]
+            elif sys.platform == "win32":
+                self.base_dir = os.path.join(os.getenv("APPDATA"), "NexusRetailOS")
+            else:
+                self.base_dir = os.path.join(os.path.expanduser("~"), ".config", "NexusRetailOS")
 
         # 2. ✅ CRITICAL FIX: Use 'ml_store' to prevent Electron deletion
         self.cache_dir = Path(self.base_dir) / "ml_store" / "stockout_simulations"

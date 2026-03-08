@@ -38,17 +38,20 @@ export default function CustomerLedger() {
     const [deleteOpen, setDeleteOpen] = useState(false);
     const [selectedCustomer, setSelectedCustomer] = useState(null);
     const [formData, setFormData] = useState({ name: "", mobile: "", address: "" });
-
-    useEffect(() => { loadCustomers(); }, []);
+    const isMounted = useRef(false);
 
     // --- DEBOUNCE LOGIC ---
     useEffect(() => {
-        const handler = setTimeout(() => {
-            // Trigger a fresh load (reset=true) when user types
-            loadCustomers(true);
-        }, 300);
-
-        return () => clearTimeout(handler);
+        if (isMounted.current) {
+            const handler = setTimeout(() => {
+                // Trigger a fresh load (reset=true) when user types
+                loadCustomers(true);
+            }, 300);
+            return () => clearTimeout(handler);
+        } else {
+            isMounted.current = true;
+            loadCustomers(true); // Initial load instantly
+        }
     }, [inputValue]);
     // ----------------------
 

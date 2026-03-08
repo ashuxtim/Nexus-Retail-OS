@@ -36,6 +36,7 @@ export default function PurchaseLedger() {
   // Form Data
   const [newSupplier, setNewSupplier] = useState({ name: '', mobile: '', address: '' });
   const [editingSupplier, setEditingSupplier] = useState({ id: null, name: '', mobile: '', address: '' });
+  const isMounted = useRef(false);
 
   const navigate = useNavigate();
 
@@ -94,10 +95,15 @@ const loadSuppliers = useCallback(async (reset = false) => {
 
   // REPLACE your existing useEffect with this:
 useEffect(() => {
-    const timer = setTimeout(() => {
-        loadSuppliers(true); // <--- Pass true to reset list on search change
-    }, 500); 
-    return () => clearTimeout(timer);
+    if (isMounted.current) {
+        const timer = setTimeout(() => {
+            loadSuppliers(true); // <--- Pass true to reset list on search change
+        }, 500); 
+        return () => clearTimeout(timer);
+    } else {
+        isMounted.current = true;
+        loadSuppliers(true); // Initial load instantly
+    }
 }, [search]); // Removed loadSuppliers from dependency to prevent loops, search is enough
 
   // --- KEYBOARD NAVIGATION ---

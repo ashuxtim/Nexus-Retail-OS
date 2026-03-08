@@ -4,9 +4,16 @@ import traceback
 
 
 def get_logger(name):
+    import sys
     # Determine log path
-    app_data = os.getenv("APPDATA") or os.path.expanduser("~")
-    log_dir = os.path.join(app_data, "NexusRetailOS", "logs")
+    if "NEXUS_USER_DATA" in os.environ:
+        _base = os.environ["NEXUS_USER_DATA"]
+    elif sys.platform == "win32":
+        _base = os.path.join(os.getenv("APPDATA"), "NexusRetailOS")
+    else:
+        _base = os.path.join(os.path.expanduser("~"), ".config", "NexusRetailOS")
+        
+    log_dir = os.path.join(_base, "logs")
 
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
