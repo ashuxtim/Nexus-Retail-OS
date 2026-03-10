@@ -57,3 +57,11 @@ python_server/ml_store/
 # --- Ignore local scripts and notes ---
 bugs.md
 merge_code.py
+
+# Local dev / test files
+python_server/features/different_customer_analogy.txt
+python_server/features/feature_engineering_shipping.md
+python_server/mlops/mlops_update.md
+python_server/models/shipping_values.md
+python_server/test_groq_llama.py
+python_server/test_llama.py
