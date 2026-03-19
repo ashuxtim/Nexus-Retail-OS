@@ -56,10 +56,8 @@ function runMigrations() {
   }
 
   if (!fs.existsSync(migrationsDir)) {
-    console.error(`❌ Migrations folder not found at: ${migrationsDir}`);
-    // If we can't find the migrations, we can't verify the DB.
-    // Return false to stop startup.
-    return false;
+    fs.mkdirSync(migrationsDir, { recursive: true });
+    console.log('Migrations folder created automatically.');
   }
 
   // 3. OPEN DB (Synchronous)

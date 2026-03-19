@@ -89,7 +89,7 @@ function handleSearch(term, reqId) {
       item.unit_cost as purchase_price
     FROM purchase_item item
     JOIN purchase_invoice pi ON item.invoice_id = pi.id
-    LEFT JOIN supplier s ON pi.supplier_id = s.id
+    LEFT JOIN supplier s ON pi.supplier_id = s.id AND s.is_deleted = 0
     JOIN product_variant v ON item.variant_id = v.id
     JOIN product p ON v.product_id = p.id
     WHERE

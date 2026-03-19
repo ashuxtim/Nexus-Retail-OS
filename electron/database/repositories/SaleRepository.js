@@ -1,4 +1,5 @@
 const { getDB } = require('../db_manager');
+const { assertPositiveNumber, assertNonNegativeNumber } = require('../utils/validate');
 
 module.exports = {
   // TRANSACTIONAL: Standard Sale
@@ -34,6 +35,12 @@ module.exports = {
   createFullTransaction(customerId, items, paidAmount, nextPaymentDate, paymentMode = 'Cash') {
     const db = getDB();
     try {
+      assertPositiveNumber(customerId, 'customerId');
+      if (!Array.isArray(items) || items.length === 0) {
+          throw new Error('Validation failed: items must be a non-empty array.');
+      }
+      assertNonNegativeNumber(paidAmount, 'paidAmount');
+
       const tx = db.transaction(() => {
         const checkStock = db.prepare('SELECT pv.current_stock, p.name as product_name, pv.name as variant_name FROM product_variant pv JOIN product p ON pv.product_id = p.id WHERE pv.id = ?');
 
@@ -171,6 +178,8 @@ module.exports = {
 
   createPayment(customerId, amount) {
     try {
+      assertPositiveNumber(customerId, 'customerId');
+      assertPositiveNumber(amount, 'amount');
       getDB().prepare('INSERT INTO payment (customer_id, amount) VALUES (?, ?)').run(customerId, amount);
       return { success: true };
     } catch (e) { return { error: e.message }; }

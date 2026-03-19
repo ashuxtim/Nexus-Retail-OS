@@ -1,4 +1,5 @@
 const { getDB } = require('../db_manager');
+const { assertPositiveNumber } = require('../utils/validate');
 
 module.exports = {
   getAll() { return getDB().prepare('SELECT * FROM customer').all(); },
@@ -74,6 +75,11 @@ module.exports = {
       const db = getDB();
       try {
           const tx = db.transaction(() => {
+              assertPositiveNumber(amount, 'amount');
+              const customer = db.prepare('SELECT balance FROM customer WHERE id = ?').get(customerId);
+              if (amount > customer.balance) {
+                  throw new Error(`Payment of ${amount} exceeds outstanding balance of ${customer.balance}`);
+              }
               if (amount > 0) {
                   db.prepare('INSERT INTO payment (customer_id, amount) VALUES (?, ?)').run(customerId, amount);
               }

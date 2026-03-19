@@ -53,6 +53,12 @@ class ChurnFeatureEngineer:
         if df.empty:
             return pd.DataFrame()
 
+        # Defensive cast — daily_seed (numpy rng.choice) can store customer_id
+        # as BLOB in SQLite. Mixed bytes/int breaks pandas groupby sort.
+        df["customer_id"] = pd.to_numeric(df["customer_id"], errors="coerce").astype("Int64")
+        df = df.dropna(subset=["customer_id"])
+        df["customer_id"] = df["customer_id"].astype(int)
+
         df["sale_date"] = pd.to_datetime(df["sale_date"])
 
         # Strip tz for pandas arithmetic — DB timestamps are tz-naive

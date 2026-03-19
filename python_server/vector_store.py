@@ -152,9 +152,8 @@ class SmartSearchEngine:
                         "SELECT id, name, mobile, address FROM customer"
                     )).fetchall()
                     def make_doc(row):
-                        # CRITICAL FIX: mobile NOT included in embedding text
-                        # Mobile is stored as metadata only for exact lookup
-                        return f"{row.name}"
+                        address = row.address or ""
+                        return f"{row.name} {address}"
                     def make_meta(row):
                         return {
                             "customer_id": row.id,
@@ -204,12 +203,26 @@ class SmartSearchEngine:
                 # Encode in batches to avoid memory spikes on large catalogs
                 embeddings = self.model.encode(docs, batch_size=64, show_progress_bar=False)
                 
-                collection.add(
-                    ids=ids,
-                    embeddings=embeddings.tolist(),
-                    documents=docs,
-                    metadatas=metas
-                )
+                # ChromaDB has max batch size limit of 5461 elements.
+                # Process strictly in smaller chunks to prevent insertion failure.
+                BATCH_LIMIT = 5000
+                total_items = len(new_rows)
+                
+                # We need embeddings as list for ChromaDB
+                embeddings_list = embeddings.tolist()
+                
+                for i in range(0, total_items, BATCH_LIMIT):
+                    batch_ids = ids[i:i + BATCH_LIMIT]
+                    batch_embeddings = embeddings_list[i:i + BATCH_LIMIT]
+                    batch_documents = docs[i:i + BATCH_LIMIT]
+                    batch_metadatas = metas[i:i + BATCH_LIMIT]
+                    
+                    collection.add(
+                        ids=batch_ids,
+                        embeddings=batch_embeddings,
+                        documents=batch_documents,
+                        metadatas=batch_metadatas
+                    )
                 print(f"   ✅ ChromaDB [{entity_type}]: Added {len(to_add_ids)} new records.")
 
     def search(self, entity_type, query, limit=5):
@@ -228,9 +241,10 @@ class SmartSearchEngine:
         if collection is None or collection.count() == 0:
             return {"error": "empty", "message": f"No {entity_type}s indexed yet."}
 
+        fetch_limit = min(limit * 10, collection.count())
         results = collection.query(
             query_texts=[query],
-            n_results=min(limit, collection.count()),
+            n_results=fetch_limit,
             include=["metadatas", "distances", "documents"]
         )
 
@@ -250,6 +264,22 @@ class SmartSearchEngine:
                 **meta,
                 "similarity": similarity
             })
+
+        # Deduplicate by brand (first word of product_name), max 3 per brand
+        if entity_type == "product":
+            seen_brands = {}
+            deduped = []
+            for m in matches:
+                # Use split to carefully get first word, handle empty strings safely
+                p_name = m.get("product_name", "")
+                parts = p_name.split()
+                brand = parts[0] if parts else ""
+                
+                count = seen_brands.get(brand, 0)
+                if count < 5:
+                    deduped.append(m)
+                    seen_brands[brand] = count + 1
+            matches = deduped
 
         return {
             "entity_type": entity_type,

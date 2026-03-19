@@ -1,4 +1,5 @@
 const { getDB } = require('../db_manager');
+const { assertPositiveNumber } = require('../utils/validate');
 
 // Helper to get Local SQLite-ready date string
 const getLocalTime = () => {
@@ -25,7 +26,7 @@ module.exports = {
           ELSE 3
         END as match_priority
       FROM supplier
-      WHERE (name LIKE ? OR mobile LIKE ?)
+      WHERE is_deleted = 0 AND (name LIKE ? OR mobile LIKE ?)
       ORDER BY match_priority ASC, name ASC 
       LIMIT ? OFFSET ?
     `).all(prefix, wordStart, term, term, limit, offset);
@@ -66,7 +67,7 @@ module.exports = {
   },
 
   getDeleted() {
-    return [];
+    return getDB().prepare('SELECT * FROM supplier WHERE is_deleted = 1 ORDER BY name ASC').all();
   },
 
   create(name, mobile, address) {
@@ -85,13 +86,16 @@ module.exports = {
 
   softDelete(id) {
     try {
-      getDB().prepare('DELETE FROM supplier WHERE id = ?').run(id);
+      getDB().prepare('UPDATE supplier SET is_deleted = 1 WHERE id = ?').run(id);
       return { success: true };
     } catch (e) { return { error: e.message }; }
   },
 
   restore(id) {
-    return { error: "Cannot restore permanently deleted supplier" };
+    try {
+      getDB().prepare('UPDATE supplier SET is_deleted = 0 WHERE id = ?').run(id);
+      return { success: true };
+    } catch (e) { return { error: e.message }; }
   },
 
   // 1. GET SINGLE SUPPLIER
@@ -154,6 +158,8 @@ module.exports = {
         const updateStock = db.prepare('UPDATE product_variant SET current_stock = current_stock + ? WHERE id = ?');
 
         for (const item of items) {
+          assertPositiveNumber(item.quantity, 'item.quantity');
+          assertPositiveNumber(item.price, 'item.price');
           insertItem.run(invoiceId, item.variantId, item.quantity, item.price);
           updateStock.run(item.quantity, item.variantId);
         }
@@ -172,8 +178,16 @@ module.exports = {
         // Corrected: purchase_item, invoice_id, variant_id
         const items = db.prepare('SELECT variant_id, quantity FROM purchase_item WHERE invoice_id = ?').all(id);
         
-        // Corrected: product_variant, current_stock
+        const checkStock = db.prepare('SELECT current_stock FROM product_variant WHERE id = ?');
         const revertStock = db.prepare('UPDATE product_variant SET current_stock = current_stock - ? WHERE id = ?');
+
+        for (const item of items) {
+          const variant = checkStock.get(item.variant_id);
+          if (!variant) continue;
+          if (variant.current_stock - item.quantity < 0) {
+            throw new Error(`Cannot delete purchase: deleting this invoice would make stock negative for variant ID ${item.variant_id}. Some of this stock has already been sold.`);
+          }
+        }
 
         for (const item of items) {
           revertStock.run(item.quantity, item.variant_id);

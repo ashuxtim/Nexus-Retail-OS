@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import logging
 import threading
@@ -42,11 +43,11 @@ class ChurnPredictor:
         if base_dir:
             self.base_dir = base_dir
         else:
-            # Fallback: use AppData location
-            appdata = os.getenv("APPDATA")
-            if not appdata:
-                appdata = os.path.expanduser("~")
-            self.base_dir = os.path.join(appdata, "NexusRetailOS")
+            # Fallback: use AppData location or Linux config
+            if sys.platform == "win32":
+                self.base_dir = os.path.join(os.getenv("APPDATA"), "NexusRetailOS")
+            else:
+                self.base_dir = os.path.join(os.path.expanduser("~"), ".config", "NexusRetailOS")
 
         # ✅ FIX: Move to 'ml_store' to prevent Electron wiping the folder
         self.model_dir = os.path.join(self.base_dir, "ml_store", "models")

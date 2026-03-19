@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import pandas as pd
 import numpy as np
@@ -29,8 +30,10 @@ class RevenueForecaster:
         if base_dir:
             self.base_dir = base_dir
         else:
-            appdata = os.getenv("APPDATA") or os.path.expanduser("~")
-            self.base_dir = os.path.join(appdata, "NexusRetailOS")
+            if sys.platform == "win32":
+                self.base_dir = os.path.join(os.getenv("APPDATA"), "NexusRetailOS")
+            else:
+                self.base_dir = os.path.join(os.path.expanduser("~"), ".config", "NexusRetailOS")
 
         # Safe Cache Directory
         self.cache_dir = os.path.join(self.base_dir, "ml_store", "forecast")

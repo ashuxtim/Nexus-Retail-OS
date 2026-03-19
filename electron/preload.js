@@ -37,6 +37,7 @@ contextBridge.exposeInMainWorld('api', {
   getDashboardStats: () => ipcRenderer.invoke('dashboard:get-stats'),
   getForecast: () => ipcRenderer.invoke('dashboard:get-forecast'),
   getAnalytics: () => ipcRenderer.invoke('dashboard:get-analytics'),
+  forceRefreshAnalytics: () => ipcRenderer.invoke('analytics:force-refresh'),
 
   // Products
   getProducts: (params) => invokeStandard('product:get-all', params),

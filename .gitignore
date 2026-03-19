@@ -65,3 +65,8 @@ python_server/mlops/mlops_update.md
 python_server/models/shipping_values.md
 python_server/test_groq_llama.py
 python_server/test_llama.py
+bug_resolution_report.md
+bugs_now.md
+current_session.md
+plan.md
+python_server/models/market_basket/fp-growth_while_shiiping.md

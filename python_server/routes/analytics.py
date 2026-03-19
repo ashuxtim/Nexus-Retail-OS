@@ -1,15 +1,15 @@
 # FILE: python_server/routes/analytics.py
 # Analytics, Forecast, Stockout, Cache, and Health endpoints.
 
+import os
 import asyncio
 from typing import Optional
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter
 
 from core import state
 from core.time_utils import now as tz_now
 from core.startup import run_analytics_pipeline
 from scripts.backend_logging import get_logger
-from analytics import AnalyticsEngine
 from models.stockout.predictor import StockoutPredictor
 from models.churn.churn_predictor import ChurnPredictor
 from models.forecast.forecaster import RevenueForecaster
@@ -30,16 +30,11 @@ logger = get_logger("NexusAI_Backend")
 
 
 @router.get("/analytics/dashboard")
-async def get_dashboard_analytics(background_tasks: BackgroundTasks):
-    try:
-        if not state.raw_engine:
-            return {"status": "error", "message": "DB not initialized"}
-        loop = asyncio.get_running_loop()
-        analytics = AnalyticsEngine(state.raw_engine, base_dir=state.BASE_DIR)
-        return await loop.run_in_executor(None, analytics.get_dashboard_metrics)
-    except Exception as e:
-        logger.error(f"Dashboard Endpoint Failed: {e}")
-        return {"status": "error", "message": str(e), "data": {}}
+async def get_dashboard_analytics():
+    if not state.raw_engine:
+        return {"status": "error", "message": "DB not initialized"}
+    with state._cache_lock:
+        return dict(state.ANALYTICS_CACHE)
 
 
 @router.get("/forecast")
@@ -89,19 +84,57 @@ async def churn_analysis(limit: int = 50, risk_level: str = None):
 
 
 @router.post("/analytics/cache/refresh")
-async def force_refresh_analytics(background_tasks: BackgroundTasks):
-    def run_refresh():
-        try:
-            analytics = AnalyticsEngine(state.raw_engine, base_dir=state.BASE_DIR)
-            analytics.force_refresh_all()
-        except Exception as e:
-            logger.error(f"Background refresh failed: {e}")
+async def force_refresh_analytics():
+    """Full clean slate refresh — clears all caches and reruns all 4 models."""
+    try:
+        import sqlite3
 
-    background_tasks.add_task(run_refresh)
-    return {
-        "status": "refresh_started",
-        "message": "AI models updating in background...",
-    }
+        # Step 1 — Reset in-memory cache immediately so frontend sees processing state
+        with state._cache_lock:
+            state.ANALYTICS_CACHE["status"] = "processing"
+            state.ANALYTICS_CACHE["data"] = {}
+
+        # Step 2 — Clear analytics_snapshot table so stale data is not served on next startup
+        try:
+            conn = sqlite3.connect(state.DB_PATH)
+            conn.execute("DELETE FROM analytics_snapshot")
+            conn.commit()
+            conn.close()
+            logger.info("🗑️ analytics_snapshot table cleared for force refresh.")
+        except Exception as e:
+            logger.error(f"Failed to clear analytics_snapshot: {e}")
+
+        # Step 3 — Delete all ml_store files except chroma (same as force_refresh_all)
+        try:
+            import shutil
+            ml_store_path = os.path.join(state.BASE_DIR, "ml_store")
+            if os.path.exists(ml_store_path):
+                for item in os.listdir(ml_store_path):
+                    item_path = os.path.join(ml_store_path, item)
+                    if item == "chroma":
+                        continue
+                    if os.path.isdir(item_path):
+                        shutil.rmtree(item_path)
+                    else:
+                        os.remove(item_path)
+                os.makedirs(ml_store_path, exist_ok=True)
+                logger.info("🗑️ ml_store cleared for force refresh.")
+        except Exception as e:
+            logger.error(f"Failed to clear ml_store: {e}")
+
+        # Step 4 — Start fresh pipeline in background thread
+        import threading
+        threading.Thread(target=run_analytics_pipeline, daemon=True).start()
+        logger.info("🚀 Force refresh pipeline started in background.")
+
+        return {
+            "status": "refresh_started",
+            "message": "Full reset initiated. All 4 models recomputing in background."
+        }
+
+    except Exception as e:
+        logger.error(f"Force refresh failed: {e}")
+        return {"status": "error", "message": str(e)}
 
 
 # --- STOCKOUT ENDPOINTS ---

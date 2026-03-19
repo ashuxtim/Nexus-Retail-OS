@@ -646,39 +646,26 @@ ipcMain.handle('dashboard:get-forecast', async () => {
 });
 
 
+ipcMain.handle('analytics:force-refresh', async () => {
+  try {
+    const res = await fetchPython('/analytics/cache/refresh', 'POST');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    return data;
+  } catch (e) {
+    console.error('Force refresh failed:', e);
+    return { status: 'error', message: e.message };
+  }
+});
+
+
 ipcMain.handle('dashboard:get-analytics', async () => {
   try {
-    const userDataPath = app.getPath('userData');
-    const cachePath = path.join(userDataPath, 'analytics_cache.json');
+    const analyticsData = await fetchPython('/analytics/dashboard');
 
-    let analyticsData = null;
-
-    // 1. Try reading analytics_cache.json (Fast Load)
-    if (fs.existsSync(cachePath)) {
-      try {
-        const raw = fs.readFileSync(cachePath, 'utf8');
-        const parsed = JSON.parse(raw);
-        const cacheTime = new Date(parsed.timestamp).getTime();
-        const now = Date.now();
-
-        // 4 Hours Expiry
-        if ((now - cacheTime) < 14400000 && parsed.data) {
-          analyticsData = parsed.data;
-        }
-      } catch (parseErr) {
-        console.warn("Corrupt analytics cache");
-      }
-    }
-
-    // 2. If cache stale/missing, fetch from Python (Source of Truth)
-    if (!analyticsData) {
-      const res = await fetchPython('/analytics/dashboard');
-      analyticsData = res && res.data ? res.data : res;
-    }
-
-    // 3. Format Stockouts (ensure fields exist)
-    if (analyticsData && Array.isArray(analyticsData.stockouts)) {
-      analyticsData.stockouts = analyticsData.stockouts.map(item => ({
+    // Format stockouts to ensure all expected fields exist
+    if (analyticsData?.data?.stockouts && Array.isArray(analyticsData.data.stockouts)) {
+      analyticsData.data.stockouts = analyticsData.data.stockouts.map(item => ({
         name: item.name,
         variant_id: item.variant_id,
         stock: item.stock,
@@ -689,11 +676,10 @@ ipcMain.handle('dashboard:get-analytics', async () => {
       }));
     }
 
-    return analyticsData || { status: 'unavailable', data: null };
-
+    return analyticsData;
   } catch (err) {
     console.warn("Analytics unavailable:", err.message);
-    return { status: 'unavailable', data: null };
+    return { status: 'unavailable', data: {} };
   }
 });
 
@@ -745,6 +731,7 @@ ipcMain.handle('supplier:get-deleted', async () => {
 
 ipcMain.handle('supplier:create', async (e, data) => {
   try {
+    if (!data || typeof data !== 'object') return { success: false, error: 'Invalid payload received.' };
     const existing = SupplierRepo.getSearchMinimal({ search: data.name, limit: 1 });
     if (existing && existing.length > 0) {
       return { success: true, data: { id: existing[0].id, name: existing[0].name, note: 'Already exists' } };
@@ -819,6 +806,7 @@ ipcMain.handle('product:get-all', async (e, params = {}) => {
 
 ipcMain.handle('product:create', async (e, data) => {
   try {
+    if (!data || typeof data !== 'object') return { success: false, error: 'Invalid payload received.' };
     const result = ProductRepo.create(data.name, data.category);
     if (result?.error) throw new Error(result.error);
     cache.invalidate('products');
@@ -957,6 +945,7 @@ ipcMain.handle('payment:get-by-customer-paginated', async (e, { id, limit, offse
 
 ipcMain.handle('payment:create', async (e, data) => {
   try {
+    if (!data || typeof data !== 'object') return { success: false, error: 'Invalid payload received.' };
     const result = SaleRepo.createPayment(data.customerId, data.amount);
     if (result?.error) throw new Error(result.error);
     return { success: true, data: result };
@@ -1004,7 +993,10 @@ ipcMain.handle('sale:get-last', async () => {
 
 ipcMain.handle('sale:create-full', async (e, data) => {
   try {
-    const result = SaleRepo.createFullTransaction(data.customerId, data.items, data.paidAmount, data.nextPaymentDate);
+    if (!data || typeof data !== 'object') return { success: false, error: 'Invalid payload received.' };
+    const result = SaleRepo.createFullTransaction(
+        data.customerId, data.items, data.paidAmount, data.nextPaymentDate, data.paymentMode
+    );
     if (result?.error) throw new Error(result.error);
     cache.invalidate('products');
     return { success: true, data: result };
@@ -1034,6 +1026,7 @@ ipcMain.handle('purchase:get-paginated', async (e, params) => {
 
 ipcMain.handle('purchase:create-invoice', async (e, data) => {
   try {
+    if (!data || typeof data !== 'object') return { success: false, error: 'Invalid payload received.' };
     const result = SupplierRepo.createPurchaseInvoice(data.supplierId, data.items, data.totalAmount, data.date);
     if (result?.error) throw new Error(result.error);
     cache.invalidate('purchases');

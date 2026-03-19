@@ -64,17 +64,7 @@ async def _safe_agent_invoke(prompt: str):
 
             messages = result.get("messages", [])
 
-            # Get final AI response
-            # Priority: tool success (✅) > final AI message
-            first_success = None
-            for msg in messages:
-                if msg.type == "tool":
-                    content = str(msg.content)
-                    if "✅" in content and not first_success:
-                        first_success = content
 
-            if first_success:
-                return {"answer": first_success}
 
             final_msg = messages[-1] if messages else None
             if final_msg and hasattr(final_msg, "content") and final_msg.content:
@@ -146,7 +136,7 @@ def _handle_python_query(fn_name, arg):
         return {"answer": f"📅 **This Week's Revenue:** ₹{total:,.2f}"}
 
     elif fn_name == "recent_sales":
-        rows = get_recent_sales(engine, limit=10)
+        rows = get_recent_sales(engine, limit=30)
         if not rows:
             return {"answer": "No recent sales found."}
         lines = "\n".join(

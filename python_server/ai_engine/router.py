@@ -70,7 +70,7 @@ SEARCH_PATTERNS = [
     (r"(?:history|purchases?)\s+(?:of|for)\s+(.+)$", "customer_history"),
     (r"(.+?)(?:'s)?\s+(?:purchase\s+history|orders|transactions)$", "customer_history"),
     (
-        r"(?:search|find|do we have|check|look for|show me)\s+(.+?)(?:\s+product)?$",
+        r"(?:search|find|look for)\s+(.+?)(?:\s+product)?$",
         "search_product",
     ),
 ]
@@ -105,8 +105,16 @@ def route_query(user_text: str):
         r"\breduce\b",
         r"\bimprove\b",
         r"\boptimize\b",
-        r"\bare\s+any\b",
+        r"\are\s+any\b",
         r"\bwhat\s+do\b",
+        r"\bdo we have\b",
+        r"\bwhat types\b",
+        r"\bhow many types\b",
+        r"\bshow me\b",
+        r"\bany\b",
+        r"\bwhat.*sell\b",
+        r"\bdo you have\b",
+        r"\bwhat.*carry\b",
     ]
     if any(re.search(sig, lower) for sig in COMPLEX_SIGNALS):
         return None, None

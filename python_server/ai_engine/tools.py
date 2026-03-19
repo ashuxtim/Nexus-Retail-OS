@@ -32,7 +32,7 @@ def search_catalog_tool(search_term: str, category: str = "product"):
     if not SEARCH_ENGINE:
         return "Search Engine is still loading..."
     
-    return SEARCH_ENGINE.search_display(category, search_term, limit=10)
+    return SEARCH_ENGINE.search_display(category, search_term, limit=30)
 
 
 @tool
@@ -134,7 +134,7 @@ def get_product_stockout_tool(product_name: str) -> str:
 
     # Step 1: Resolve entity name → variant IDs via ChromaDB
     # If search() returns dict, great. If it returns text, Phase 1 is missing, but let's assume Phase 1 is done.
-    search_result = SEARCH_ENGINE.search("product", product_name, limit=10)
+    search_result = SEARCH_ENGINE.search("product", product_name, limit=30)
     
     # Handle both new dictionary format and fallback text format
     if isinstance(search_result, str):
@@ -306,7 +306,7 @@ def get_customer_churn_for_product_tool(product_name: str) -> str:
         return "⏳ Search engine warming up."
 
     # Step 1: Resolve product to variant IDs
-    search_result = SEARCH_ENGINE.search("product", product_name, limit=10)
+    search_result = SEARCH_ENGINE.search("product", product_name, limit=30)
     
     if isinstance(search_result, str):
         return f"Warning: Search engine returned text. Ensure Phase 1 ChromaDB migration is active. Result: {search_result}"

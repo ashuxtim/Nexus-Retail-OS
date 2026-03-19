@@ -30,10 +30,6 @@ AI_INIT_FAILED = False
 _cache_lock = threading.Lock()
 
 ANALYTICS_CACHE = {
-    "churn_risk": [],
-    "market_basket": "Initializing...",
-    "segments": "",
-    "stockouts": [],
-    "forecast": {"history": [], "forecast": [], "trend": "flat"},
     "status": "processing",
+    "data": {}
 }

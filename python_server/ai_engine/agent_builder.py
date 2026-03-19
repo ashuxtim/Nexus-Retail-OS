@@ -4,7 +4,7 @@
 from langchain_groq import ChatGroq
 from langchain_core.tools import tool as lc_tool
 from sqlalchemy import text
-
+from langchain_core.messages import SystemMessage
 from langgraph.prebuilt import create_react_agent
 
 from .tools import (
@@ -45,7 +45,7 @@ def build_nexus_agent(raw_engine, groq_key):
     )
     agent_llm = ChatGroq(
         groq_api_key=groq_key,
-        model_name="meta-llama/llama-4-scout-17b-16e-instruct",
+        model_name="qwen/qwen3-32b",
         temperature=0,
     )
 
@@ -157,10 +157,9 @@ BUSINESS-WIDE QUERIES:
 - "customer segments" / "who buys most" → get_customer_segments_tool()
 - Any other data question → run_sql_query with SELECT query
 
-When answering, structure your response with markdown:
-1. **Current Situation** (numbers and trends)
-2. **Key Insights** (what the data tells us)
-3. **Action Items** (specific, actionable next steps)
+IMPORTANT: ALWAYS call a tool first. Only write your final answer AFTER 
+you have received tool results. Never write a formatted response before 
+calling a tool.
 
 DATABASE SCHEMA (SQLite):
 - customer(id, name, mobile, address, balance)
@@ -177,6 +176,9 @@ IMPORTANT: sale_date and invoice_date store full datetime strings. Use date(sale
 Example: WHERE date(cs.sale_date) = date('now', 'localtime')"""
 
     # 5. Create lean ReAct agent (15 tools)
-    agent = create_react_agent(agent_llm, all_tools, prompt=system_prompt)
+    agent = create_react_agent(
+    agent_llm,
+    all_tools,
+    prompt=SystemMessage(content=system_prompt))
 
     return agent, router_llm

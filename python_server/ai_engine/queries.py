@@ -63,7 +63,7 @@ def get_weekly_revenue(engine):
     return row[0] or 0
 
 
-def get_recent_sales(engine, limit=10):
+def get_recent_sales(engine, limit=30):
     """Most recent sales transactions."""
     with engine.connect() as c:
         rows = c.execute(
@@ -203,7 +203,7 @@ def search_customer(engine, name):
     return rows
 
 
-def get_customer_purchase_history(engine, customer_name, limit=10):
+def get_customer_purchase_history(engine, customer_name, limit=30):
     """Purchase history for a specific customer."""
     with engine.connect() as c:
         rows = c.execute(
@@ -238,7 +238,7 @@ def get_all_suppliers(engine):
     return rows
 
 
-def get_recent_purchases(engine, limit=10):
+def get_recent_purchases(engine, limit=30):
     """Most recent purchases from suppliers."""
     with engine.connect() as c:
         rows = c.execute(

@@ -861,6 +861,7 @@ export default function PurchasesPage() {
                  <Virtuoso
                     style={{ height: '100%' }}
                     data={cart}
+                    computeItemKey={(index, item) => item.variantId}
                     itemContent={(idx, item) => (
                       <div className={`px-6 py-3 border-b border-border hover:bg-muted/50 transition-colors items-center ${CART_GRID}`}>
                          <div className="min-w-0">

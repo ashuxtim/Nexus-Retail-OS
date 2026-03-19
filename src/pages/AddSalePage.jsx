@@ -546,7 +546,7 @@ export default function AddSalePage() {
                                         </TableRow>
                                     ) : (
                                         cart.map((item, i) => (
-                                            <TableRow key={i} className="hover:bg-muted/50 border-border">
+                                            <TableRow key={item.variant} className="hover:bg-muted/50 border-border">
                                                 <TableCell className="font-medium text-foreground py-3">{item.name}</TableCell>
                                                 <TableCell className="text-center py-3 text-sm">{item.qty}</TableCell>
                                                 <TableCell className="text-right py-3 text-muted-foreground text-sm">₹{Number(item.price).toFixed(2)}</TableCell>

@@ -99,7 +99,7 @@ const RenderMarkdown = ({ text }) => {
     );
 };
 
-const INITIAL_MESSAGE = { role: 'assistant', text: "👋 Hey! I'm your **Nexus Business AI**. Here's what I can do:\n\n📊 **Sales & Revenue** — Trends, comparisons, top sellers\n👥 **Customer Intel** — Segments, churn risk, loyalty\n📦 **Inventory** — Stock velocity, restocking alerts, dead stock\n🛒 **Growth Strategy** — Market basket, cross-sell opportunities\n\nTry asking: *\"How can I increase my sales?\"* or *\"What should I restock?\"*" };
+const INITIAL_MESSAGE = { id: 'init', role: 'assistant', text: "👋 Hey! I'm your **Nexus Business AI**. Here's what I can do:\n\n📊 **Sales & Revenue** — Trends, comparisons, top sellers\n👥 **Customer Intel** — Segments, churn risk, loyalty\n📦 **Inventory** — Stock velocity, restocking alerts, dead stock\n🛒 **Growth Strategy** — Market basket, cross-sell opportunities\n\nTry asking: *\"How can I increase my sales?\"* or *\"What should I restock?\"*" };
 
 export default function AiAssistant() {
     const [isOpen, setIsOpen] = useState(false);
@@ -152,7 +152,7 @@ export default function AiAssistant() {
         if (!query.trim()) return;
         const userText = query;
         setQuery('');
-        const newMessages = [...messages, { role: 'user', text: userText }];
+        const newMessages = [...messages, { id: crypto.randomUUID(), role: 'user', text: userText }];
         setMessages(newMessages);
         await processAiRequest(userText, newMessages);
     };
@@ -165,7 +165,7 @@ export default function AiAssistant() {
 
             const aiReply = data.answer || "Sorry, I couldn't process that.";
             const errorType = data.error_type || null;
-            setMessages([...currentMessages, { role: 'assistant', text: aiReply, errorType }]);
+            setMessages([...currentMessages, { id: crypto.randomUUID(), role: 'assistant', text: aiReply, errorType }]);
             setProcessingStep('idle');
         } catch (err) {
             const errMsg = err.message || "Connection failed";
@@ -179,7 +179,7 @@ export default function AiAssistant() {
             } else {
                 friendlyMsg = `❌ ${errMsg}`;
             }
-            setMessages([...currentMessages, { role: 'assistant', text: friendlyMsg, errorType: 'error' }]);
+            setMessages([...currentMessages, { id: crypto.randomUUID(), role: 'assistant', text: friendlyMsg, errorType: 'error' }]);
             setProcessingStep('idle');
         }
     };
@@ -223,7 +223,7 @@ export default function AiAssistant() {
         try {
             const data = await window.api.transcribeAudio(buffer);
             if (data.text) {
-                const newMsgs = [...messages, { role: 'user', text: data.text }];
+                const newMsgs = [...messages, { id: crypto.randomUUID(), role: 'user', text: data.text }];
                 setMessages(newMsgs);
                 setQuery('');
                 await processAiRequest(data.text, newMsgs);
@@ -289,11 +289,11 @@ export default function AiAssistant() {
                     {/* CHAT AREA */}
                     <ScrollArea className="flex-1 p-4 bg-slate-950/50">
                         <div className="space-y-6 pb-4">
-                            {messages.map((msg, idx) => {
+                            {messages.map((msg) => {
                                 const msgType = msg.role === 'assistant' ? getMessageType(msg.text) : 'user';
 
                                 return (
-                                    <div key={idx} className={cn("flex flex-col max-w-[90%]", msg.role === 'user' ? "ml-auto items-end" : "mr-auto items-start")}>
+                                    <div key={msg.id} className={cn("flex flex-col max-w-[90%]", msg.role === 'user' ? "ml-auto items-end" : "mr-auto items-start")}>
                                         <div className={cn(
                                             "px-4 py-3 text-sm shadow-md backdrop-blur-sm",
                                             msg.role === 'user'

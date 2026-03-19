@@ -1,12 +1,12 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Area, AreaChart, PieChart, Pie, Cell } from 'recharts';
 import { Virtuoso } from 'react-virtuoso';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   TrendingUp, Users, Package, DollarSign, AlertTriangle, Activity, 
   Sparkles, ArrowUpRight, ArrowDownRight, LayoutDashboard, 
   AlertCircle, Zap, Clock, Download, Settings, ShoppingCart,
-  TrendingDown, Minus, Brain
+  TrendingDown, Minus, Brain, RefreshCw, CheckCircle
 } from 'lucide-react';
 
 // --- SHADCN UI IMPORTS ---
@@ -233,85 +233,88 @@ export default function DashboardPage() {
   
   const [forecast, setForecast] = useState(null);
   const [analytics, setAnalytics] = useState(null);
+  const [analyticsStatus, setAnalyticsStatus] = useState('processing');
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [backendError, setBackendError] = useState(false);
   const [isExpertMode, setIsExpertMode] = useState(false);
   const pollingIntervalRef = useRef(null);
+  const fetchAnalyticsRef = useRef(null);
+  const lastForecastHashRef = useRef(null);
   
   // --- UI STATE ---
   const [activePanelTab, setActivePanelTab] = useState('debt');
   const [activeMainTab, setActiveMainTab] = useState('overview');
   
+  const processForecast = useCallback((fData) => {
+    if (!fData || fData.error) return;
+    
+    const merged = [];
+    const recentHistory = fData.history?.slice(-90) || [];
+    
+    // Process historical data
+    recentHistory.forEach(h => {
+      merged.push({
+        date: safeDate(h.date),
+        actual: safeNum(h.sales),
+        predicted: null,
+        lower_80: null,
+        upper_80: null,
+        lower_95: null,
+        upper_95: null
+      });
+    });
+    
+    // Connect last historical point to first forecast
+    if (merged.length > 0) {
+      const lastIdx = merged.length - 1;
+      merged[lastIdx].predicted = merged[lastIdx].actual;
+    }
+    
+    // Process forecast data with confidence intervals
+    if (Array.isArray(fData.forecast)) {
+      fData.forecast.forEach(f => {
+        const fDate = safeDate(f.date);
+        if (merged.length === 0 || fDate > merged[merged.length - 1].date) {
+          merged.push({
+            date: fDate,
+            actual: null,
+            predicted: safeNum(f.predicted_sales),  // ✅ FIXED: was predictedsales
+            lower_80: safeNum(f.lower_bound_80),
+            upper_80: safeNum(f.upper_bound_80),
+            lower_95: safeNum(f.lower_bound_95),
+            upper_95: safeNum(f.upper_bound_95)
+          });
+        }
+      });
+    }
+    
+    // Calculate accuracy from MAPE
+    const mape = fData.metrics?.mape || 0;
+    const accuracy = mape ? Math.max(0, (100 * (1 - mape))).toFixed(1) : 'N/A';
+    
+    setForecast({
+      chartData: merged,
+      trend: safeString(fData.trend),
+      mape: mape,
+      accuracy: accuracy,
+      // ✅ NEW: Include all expert mode metrics
+      metrics: {
+        mape: safeNum(fData.metrics?.mape || 0),
+        mae: safeNum(fData.metrics?.mae || 0),
+        rmse: safeNum(fData.metrics?.rmse || 0),
+        r_squared: safeNum(fData.metrics?.r_squared || 0),
+        aic: safeNum(fData.metrics?.aic || 0),
+        bic: safeNum(fData.metrics?.bic || 0)
+      },
+      // ✅ NEW: Model metadata for expert mode
+      model_metadata: fData.model_metadata || null
+    });
+  }, []);
+
   // --- DATA FETCHING (PRESERVED) ---
   useEffect(() => {
     let isMounted = true;
-    
-    const processForecast = (fData) => {
-  if (!fData || fData.error) return;
-  
-  const merged = [];
-  const recentHistory = fData.history?.slice(-90) || [];
-  
-  // Process historical data
-  recentHistory.forEach(h => {
-    merged.push({
-      date: safeDate(h.date),
-      actual: safeNum(h.sales),
-      predicted: null,
-      lower_80: null,
-      upper_80: null,
-      lower_95: null,
-      upper_95: null
-    });
-  });
-  
-  // Connect last historical point to first forecast
-  if (merged.length > 0) {
-    const lastIdx = merged.length - 1;
-    merged[lastIdx].predicted = merged[lastIdx].actual;
-  }
-  
-  // Process forecast data with confidence intervals
-  if (Array.isArray(fData.forecast)) {
-    fData.forecast.forEach(f => {
-      const fDate = safeDate(f.date);
-      if (merged.length === 0 || fDate > merged[merged.length - 1].date) {
-        merged.push({
-          date: fDate,
-          actual: null,
-          predicted: safeNum(f.predicted_sales),  // ✅ FIXED: was predictedsales
-          lower_80: safeNum(f.lower_bound_80),
-          upper_80: safeNum(f.upper_bound_80),
-          lower_95: safeNum(f.lower_bound_95),
-          upper_95: safeNum(f.upper_bound_95)
-        });
-      }
-    });
-  }
-  
-  // Calculate accuracy from MAPE
-  const mape = fData.metrics?.mape || 0;
-  const accuracy = mape ? Math.max(0, (100 * (1 - mape))).toFixed(1) : 'N/A';
-  
-  setForecast({
-    chartData: merged,
-    trend: safeString(fData.trend),
-    mape: mape,
-    accuracy: accuracy,
-    // ✅ NEW: Include all expert mode metrics
-    metrics: {
-      mape: safeNum(fData.metrics?.mape || 0),
-      mae: safeNum(fData.metrics?.mae || 0),
-      rmse: safeNum(fData.metrics?.rmse || 0),
-      r_squared: safeNum(fData.metrics?.r_squared || 0),
-      aic: safeNum(fData.metrics?.aic || 0),
-      bic: safeNum(fData.metrics?.bic || 0)
-    },
-    // ✅ NEW: Model metadata for expert mode
-    model_metadata: fData.model_metadata || null
-  });
-};
-
     
     const fetchQuickStats = async () => {
       try {
@@ -330,23 +333,68 @@ export default function DashboardPage() {
       try {
         const aData = await window.api.getAnalytics();
         if (!isMounted) return;
-        
-        if (aData && !aData.error) {
-          const finalData = aData.data || aData;
-          setAnalytics(finalData);
-          
-          if (finalData.forecast) processForecast(finalData.forecast);
-          
-          if (finalData.status !== 'processing' && pollingIntervalRef.current) {
-            clearInterval(pollingIntervalRef.current);
-            pollingIntervalRef.current = null;
+
+        if (aData && !aData.error && aData.status !== 'Inactive') {
+          const status = aData.status || 'ready';
+          const innerData = aData.data || aData;
+
+          setAnalyticsStatus(prev => prev !== status ? status : prev);
+          setAnalytics(prev => {
+            // Only update if status changed or key count changed
+            // This prevents re-render on every poll when data is identical
+            const prevKeys = Object.keys(prev || {}).sort().join(',');
+            const nextKeys = Object.keys(innerData || {}).sort().join(',');
+            if (prevKeys === nextKeys) return prev;
+            return innerData;
+          });
+
+          if (innerData.forecast) {
+            const forecastHash = innerData.forecast.trend + '_' + 
+              (innerData.forecast.history?.length || 0) + '_' + 
+              (innerData.forecast.forecast?.length || 0);
+            if (forecastHash !== lastForecastHashRef.current) {
+              lastForecastHashRef.current = forecastHash;
+              processForecast(innerData.forecast);
+            }
+          }
+
+          if (status !== 'processing') {
+            // Data is ready or errored — stop polling
+            if (pollingIntervalRef.current) {
+              clearInterval(pollingIntervalRef.current);
+              pollingIntervalRef.current = null;
+            }
+            setIsRefreshing(false);
+          } else {
+            // Still processing — start polling if not already running
+            if (!pollingIntervalRef.current) {
+              pollingIntervalRef.current = setInterval(fetchAnalytics, 4000);
+            }
+          }
+        } else if (!aData || aData.error || aData.status === 'Inactive') {
+          // Python booting or unreachable — treat same as catch
+          if (isMounted) {
+            setAnalyticsStatus('processing');
+            if (!pollingIntervalRef.current) {
+              pollingIntervalRef.current = setInterval(() => fetchAnalyticsRef.current?.(), 4000);
+            }
           }
         }
       } catch (e) {
         console.warn("Analytics fetch failed:", e);
+        if (isMounted) {
+          setAnalyticsStatus('processing');
+          // Python not running yet — keep retrying every 4s until it responds
+          if (!pollingIntervalRef.current) {
+            pollingIntervalRef.current = setInterval(fetchAnalytics, 4000);
+          }
+        }
       }
     };
     
+    fetchAnalyticsRef.current = fetchAnalytics;
+
+
     const onAnalyticsReady = () => {
       fetchAnalytics();
     };
@@ -361,7 +409,27 @@ export default function DashboardPage() {
       if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
       if (window.api?.off) window.api.off("analytics:ready", onAnalyticsReady);
     };
-  }, []);
+  }, [processForecast]);
+
+  const handleForceRefresh = async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    setAnalyticsStatus('processing');
+    // DO NOT setAnalytics(null) — keep existing data visible while refreshing
+    try {
+      await window.api.forceRefreshAnalytics();
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+      // Start polling using fetchAnalytics — same function, same scope, processForecast works
+      pollingIntervalRef.current = setInterval(() => fetchAnalyticsRef.current?.(), 4000);
+    } catch (e) {
+      console.warn("Force refresh failed:", e);
+      setIsRefreshing(false);
+      setAnalyticsStatus('error');
+    }
+  };
   
   // --- MEMOIZED DATA PARSING ---
   const marketBasketRules = useMemo(() => {
@@ -431,8 +499,8 @@ const inventoryForecastList = useMemo(() => {
   // ============================================================================
   // RENDER: COMPACT TOP RAIL
   // ============================================================================
-  const TopRail = () => (
-    <div className="flex items-center justify-between h-14 px-6 border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
+  const TopRail = ({ onForceRefresh, isRefreshing, isExpertMode, setIsExpertMode, aiSummaryText, isProcessing }) => (
+    <div className="flex items-center justify-between h-14 px-6 border-b border-border bg-card/50 backdrop-blur-sm">
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-primary/10 rounded-lg">
@@ -446,11 +514,24 @@ const inventoryForecastList = useMemo(() => {
       </div>
       
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-          <Download className="w-4 h-4" />
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onForceRefresh}
+          disabled={isRefreshing}
+          className="h-7 px-2 text-xs gap-1.5 text-muted-foreground hover:text-foreground"
+          title="Refresh AI Models"
+        >
+          <motion.div
+            animate={isRefreshing ? { rotate: 360 } : { rotate: 0 }}
+            transition={isRefreshing ? { duration: 1, repeat: Infinity, ease: "linear" } : {}}
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+          </motion.div>
+          <span className="hidden sm:inline">{isRefreshing ? 'Refreshing...' : 'Refresh AI'}</span>
         </Button>
         <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-          <Settings className="w-4 h-4" />
+          <Download className="w-4 h-4" />
         </Button>
         
         <div className="flex items-center gap-2 ml-2 pl-3 border-l">
@@ -559,16 +640,18 @@ const inventoryForecastList = useMemo(() => {
                   
                   <div className="space-y-2">
                     <Sparkline data={kpi.sparklineData} color={kpi.color} showArea />
-                    <div className="flex items-center gap-2 text-xs">
-                      {isPositive ? (
-                        <ArrowUpRight className="w-3 h-3 text-emerald-500" />
-                      ) : (
-                        <ArrowDownRight className="w-3 h-3 text-red-500" />
-                      )}
-                      <span className={isPositive ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}>
+                    <div className="flex items-center gap-2">
+                      <span className={`inline-flex items-center gap-0.5 text-xs font-semibold px-1.5 py-0.5 rounded-full ${
+                        isPositive 
+                          ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' 
+                          : 'bg-red-500/15 text-red-600 dark:text-red-400'
+                      }`}>
+                        {isPositive 
+                          ? <ArrowUpRight className="w-3 h-3" /> 
+                          : <ArrowDownRight className="w-3 h-3" />}
                         {Math.abs(kpi.change)}%
                       </span>
-                      <span className="text-muted-foreground">vs last week</span>
+                      <span className="text-xs text-muted-foreground">vs last week</span>
                     </div>
                   </div>
                 </CardContent>
@@ -584,7 +667,7 @@ const inventoryForecastList = useMemo(() => {
   // RENDER: REVENUE FORECAST CARD
   // ============================================================================
   const RevenueForecastCard = () => (
-    <Card className="border-border">
+    <Card className="h-full border-border">
       <CardHeader className="pb-3">
   <div className="flex items-center justify-between">
     <div className="space-y-1">
@@ -653,7 +736,37 @@ const inventoryForecastList = useMemo(() => {
               <p className="text-sm text-muted-foreground">Loading forecast data...</p>
             </div>
           </div>
-        ) : forecast && forecast.chartData && forecast.chartData.length > 0 ? (
+        ) : !forecast?.chartData?.length ? (
+          <div className="h-64 flex items-center justify-center">
+            <div className="text-center space-y-3 px-4">
+              {analyticsStatus === 'processing' ? (
+                <>
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                    className="mx-auto w-fit"
+                  >
+                    <TrendingUp className="w-8 h-8 text-blue-500" />
+                  </motion.div>
+                  <p className="text-sm font-medium text-blue-500">Building Revenue Forecast</p>
+                  <p className="text-xs text-muted-foreground">Prophet model analyzing 90-day patterns...</p>
+                </>
+              ) : analyticsStatus === 'error' ? (
+                <>
+                  <AlertCircle className="w-8 h-8 text-amber-500 mx-auto" />
+                  <p className="text-sm font-medium text-amber-500">Forecast Unavailable</p>
+                  <p className="text-xs text-muted-foreground">Try refreshing the AI models</p>
+                </>
+              ) : (
+                <>
+                  <AlertCircle className="w-8 h-8 text-muted-foreground mx-auto" />
+                  <p className="text-sm text-muted-foreground">No forecast data yet</p>
+                  <p className="text-xs text-muted-foreground">Needs at least 30 days of sales history</p>
+                </>
+              )}
+            </div>
+          </div>
+        ) : (
           <div className="space-y-3">
             <ResponsiveContainer width="100%" height={280}>
               <AreaChart data={forecast.chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
@@ -733,13 +846,6 @@ const inventoryForecastList = useMemo(() => {
               </div>
             </div>
           </div>
-        ) : (
-          <div className="h-64 flex items-center justify-center">
-            <div className="text-center space-y-2">
-              <AlertCircle className="w-8 h-8 text-muted-foreground mx-auto" />
-              <p className="text-sm text-muted-foreground">No forecast data available</p>
-            </div>
-          </div>
         )}
       </CardContent>
     </Card>
@@ -749,7 +855,7 @@ const inventoryForecastList = useMemo(() => {
   // RENDER: DEBT/STOCK PANEL CARD
   // ============================================================================
   const DebtStockPanel = () => (
-    <Card className="border-border">
+    <Card className="h-full border-border">
       <CardHeader className="pb-3">
         <Tabs value={activePanelTab} onValueChange={setActivePanelTab} className="w-full">
           <TabsList className="grid w-full grid-cols-2 h-9">
@@ -871,9 +977,9 @@ const inventoryForecastList = useMemo(() => {
   // RENDER: AI ANALYTICS CONTENT (FULL WIDTH 3 CARDS)
   // ============================================================================
   const AIAnalyticsContent = () => (
-    <div className={isExpertMode ? "space-y-4" : "grid grid-cols-1 lg:grid-cols-3 gap-4"}>
+    <div className={isExpertMode ? "space-y-4" : "space-y-4"}>
       {/* Market Basket Analysis */}
-      <Card className="border-border">
+      <Card className="border-border overflow-hidden">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -891,69 +997,193 @@ const inventoryForecastList = useMemo(() => {
               </div>
             )}
           </div>
-          <p className="text-xs text-muted-foreground">
-            {isExpertMode ? "Association Rules (Confidence)" : "Buying Patterns"}
-          </p>
+          <div className="flex items-end justify-between">
+            <p className="text-xs text-muted-foreground">
+              {isExpertMode ? "Association Rules (Confidence)" : "Buying Patterns"}
+            </p>
+            {!isExpertMode && marketBasketRules.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                <span className="font-semibold text-foreground">{marketBasketRules.length}</span> rules · 
+                <span className="font-semibold text-teal-500 ml-1">
+                  {(marketBasketRules.reduce((sum, r) => sum + r.confidence, 0) / marketBasketRules.length * 100).toFixed(0)}%
+                </span> avg confidence
+              </p>
+            )}
+          </div>
         </CardHeader>
         <CardContent className="px-4 pb-4">
           {marketBasketRules.length > 0 ? (
-            <div className="space-y-2 max-h-80 overflow-y-auto">
-              {marketBasketRules.map((rule, idx) => (
-                <div key={idx} className="p-2.5 bg-muted/50 rounded border border-border hover:bg-muted transition-colors">
-                  {rule.antecedent && rule.antecedent.length > 0 ? (
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {isExpertMode ? (
-                          <div className="w-full">
-                            <div className="flex flex-wrap gap-2 items-center mb-2">
-                            {rule.antecedent.map((item, i) => (
-                              <Badge key={i} variant="secondary" className="text-xs px-2 py-1 font-medium">
-                                {item}
-                              </Badge>
-                            ))}
-                            <span className="text-muted-foreground text-xs">→</span>
-                            {rule.consequent.map((item, i) => (
-                              <Badge key={i} variant="secondary" className="text-xs px-2 py-1 font-medium">
-                                {item}
-                              </Badge>
-                            ))}
+            <div className="flex gap-4">
+              {/* Left — rules list */}
+              <div className="flex-1 space-y-2 max-h-80 overflow-y-auto min-w-0">
+                {marketBasketRules.map((rule, idx) => (
+                  <div key={idx} className="p-2.5 bg-muted/50 rounded border border-border hover:bg-muted transition-colors">
+                    {rule.antecedent && rule.antecedent.length > 0 ? (
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {isExpertMode ? (
+                            <div className="w-full">
+                              <div className="flex flex-wrap gap-2 items-center mb-2">
+                              {rule.antecedent.map((item, i) => (
+                                <Badge key={i} variant="secondary" className="text-xs px-2 py-1 font-medium">
+                                  {item}
+                                </Badge>
+                              ))}
+                              <span className="text-muted-foreground text-xs">→</span>
+                              {rule.consequent.map((item, i) => (
+                                <Badge key={i} variant="secondary" className="text-xs px-2 py-1 font-medium">
+                                  {item}
+                                </Badge>
+                              ))}
+                              </div>
+                              <div className="grid grid-cols-3 gap-4 text-xs pt-1 border-t border-border/50">
+                                <div>Conf: <span className="font-medium">{(rule.confidence * 100).toFixed(1)}%</span></div>
+                                <div>Lift: <span className="font-medium">{rule.lift.toFixed(2)}x</span></div>
+                                <div>Supp: <span className="font-medium">{(rule.support * 100).toFixed(2)}%</span></div>
+                              </div>
                             </div>
-                            <div className="grid grid-cols-3 gap-4 text-xs pt-1 border-t border-border/50">
-                              <div>Conf: <span className="font-medium">{(rule.confidence * 100).toFixed(1)}%</span></div>
-                              <div>Lift: <span className="font-medium">{rule.lift.toFixed(2)}x</span></div>
-                              <div>Supp: <span className="font-medium">{(rule.support * 100).toFixed(2)}%</span></div>
+                          ) : (
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {rule.antecedent.map((item, i) => (
+                                  <span key={i} className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                                    {item}
+                                  </span>
+                                ))}
+                                <span className="text-muted-foreground mx-1">→</span>
+                                {rule.consequent.map((item, i) => (
+                                  <span key={i} className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20">
+                                    {item}
+                                  </span>
+                                ))}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] text-muted-foreground">Confidence</span>
+                                <div className="flex-1 h-1 rounded-full bg-muted overflow-hidden">
+                                  <div 
+                                    className="h-full rounded-full bg-teal-500"
+                                    style={{ width: `${(rule.confidence * 100)}%` }}
+                                  />
+                                </div>
+                                <span className="text-[10px] font-semibold text-teal-600 dark:text-teal-400">
+                                  {(rule.confidence * 100).toFixed(0)}%
+                                </span>
+                              </div>
                             </div>
+                          )}
+                        </div>
+                        {isExpertMode && (
+                          <div className="mt-1 text-xs text-muted-foreground grid grid-cols-3 gap-4">
+                              <span>Conv: {rule.conviction.toFixed(2)}</span>
+                              <span>Lev: {rule.leverage.toFixed(4)}</span>
+                              {rule.zhangs_metric !== null && (
+                                <span>Zhang: {rule.zhangs_metric.toFixed(3)}</span>
+                              )}
                           </div>
-                        ) : (
-                          <p className="text-sm font-medium text-foreground leading-snug">{rule.description}</p>
                         )}
                       </div>
-                      {isExpertMode && (
-                        <div className="mt-1 text-xs text-muted-foreground grid grid-cols-3 gap-4">
-                            <span>Conv: {rule.conviction.toFixed(2)}</span>
-                            <span>Lev: {rule.leverage.toFixed(4)}</span>
-                            {rule.zhangs_metric !== null && (
-                              <span>Zhang: {rule.zhangs_metric.toFixed(3)}</span>
-                            )}
-                        </div>
-                      )}
+                    ) : (
+                      <p className="text-xs text-muted-foreground">{rule.description || 'No pattern data'}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {/* Right — summary panel */}
+              {!isExpertMode && (
+                <div className="w-56 flex-shrink-0 space-y-3 border-l border-border/50 pl-4">
+                  {/* Stats strip */}
+                  <div className="p-3 rounded-lg bg-muted/40 border border-border/50 space-y-2.5">
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+                      Pattern Summary
+                    </p>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-muted-foreground">Total Rules</span>
+                        <span className="text-xs font-bold text-foreground">{marketBasketRules.length}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-muted-foreground">Avg Confidence</span>
+                        <span className="text-xs font-bold text-teal-500">
+                          {(marketBasketRules.reduce((sum, r) => sum + r.confidence, 0) / marketBasketRules.length * 100).toFixed(0)}%
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-muted-foreground">High Confidence</span>
+                        <span className="text-xs font-bold text-foreground">
+                          {marketBasketRules.filter(r => r.confidence >= 0.8).length}
+                        </span>
+                      </div>
                     </div>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">{rule.description || 'No pattern data'}</p>
-                  )}
+                  </div>
+                  {/* Top 3 strongest rules */}
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+                      Strongest Rules
+                    </p>
+                    {[...marketBasketRules]
+                      .sort((a, b) => b.confidence - a.confidence)
+                      .slice(0, 3)
+                      .map((rule, i) => (
+                        <div key={i} className="p-2 rounded-md bg-muted/30 border border-border/40 space-y-1">
+                          <div className="text-[10px] text-foreground font-medium line-clamp-1">
+                            {rule.antecedent[0]} → {rule.consequent[0]}
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <div className="flex-1 h-1 rounded-full bg-muted overflow-hidden">
+                              <div
+                                className="h-full rounded-full bg-teal-500"
+                                style={{ width: `${rule.confidence * 100}%` }}
+                              />
+                            </div>
+                            <span className="text-[10px] font-semibold text-teal-500">
+                              {(rule.confidence * 100).toFixed(0)}%
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                    }
+                  </div>
                 </div>
-              ))}
+              )}
             </div>
           ) : (
             <div className="h-80 flex items-center justify-center">
-              <p className="text-xs text-muted-foreground text-center">No patterns detected yet</p>
+              <div className="text-center space-y-3 px-4">
+                {analyticsStatus === 'processing' ? (
+                  <>
+                    <motion.div
+                      animate={{ rotate: [0, 10, -10, 0] }}
+                      transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                      className="mx-auto w-fit"
+                    >
+                      <ShoppingCart className="w-8 h-8 text-teal-500" />
+                    </motion.div>
+                    <p className="text-sm font-medium text-teal-500">Mining Shopping Patterns</p>
+                    <p className="text-xs text-muted-foreground">FP-Growth analyzing transaction history...</p>
+                    <p className="text-xs text-muted-foreground opacity-70">This may take a few minutes</p>
+                  </>
+                ) : analyticsStatus === 'error' ? (
+                  <>
+                    <AlertCircle className="w-8 h-8 text-amber-500 mx-auto" />
+                    <p className="text-sm font-medium text-amber-500">Analysis Unavailable</p>
+                    <p className="text-xs text-muted-foreground">Try refreshing the AI models</p>
+                  </>
+                ) : (
+                  <>
+                    <ShoppingCart className="w-8 h-8 text-muted-foreground/30 mx-auto" />
+                    <p className="text-sm text-muted-foreground">No patterns found yet</p>
+                    <p className="text-xs text-muted-foreground">Needs more transaction variety to detect patterns</p>
+                  </>
+                )}
+              </div>
             </div>
           )}
         </CardContent>
       </Card>
 
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
       {/* Churn Risk */}
-      <Card className="border-border">
+      <Card className="border-border flex flex-col h-[400px] overflow-hidden">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -997,9 +1227,62 @@ const inventoryForecastList = useMemo(() => {
             {isExpertMode ? "ML Risk Scores (XGBoost)" : "Customer Activity"}
           </p>
         </CardHeader>
-        <CardContent className="px-4 pb-4">
+        <CardContent className="px-4 pb-4 flex flex-col overflow-hidden min-h-0 h-full">
           {churnRiskList.length > 0 ? (
-            <div className="space-y-2 max-h-80 overflow-y-auto">
+            <>
+              {/* Risk summary strip */}
+              {(() => {
+                const highCount = churnRiskList.filter(c => c.risk_score > 80).length;
+                const medCount = churnRiskList.filter(c => c.risk_score > 50 && c.risk_score <= 80).length;
+                const lowCount = churnRiskList.filter(c => c.risk_score <= 50).length;
+                const COLORS = ['#ef4444', '#f97316', '#22c55e'];
+                const pieData = [
+                  { name: 'High', value: highCount || 0.001 },
+                  { name: 'Med', value: medCount || 0.001 },
+                  { name: 'Low', value: lowCount || 0.001 },
+                ];
+                return (
+                  <div className="flex items-center gap-3 mb-3 p-2.5 bg-muted/40 rounded-lg border border-border/50">
+                    <PieChart width={52} height={52}>
+                      <Pie
+                        data={pieData}
+                        cx={22}
+                        cy={22}
+                        innerRadius={14}
+                        outerRadius={24}
+                        dataKey="value"
+                        strokeWidth={0}
+                      >
+                        {pieData.map((_, i) => (
+                          <Cell key={i} fill={COLORS[i]} />
+                        ))}
+                      </Pie>
+                    </PieChart>
+                    <div className="flex flex-col gap-1 text-xs">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-red-500 inline-block" />
+                        <span className="text-muted-foreground">High Risk</span>
+                        <span className="font-semibold text-foreground ml-auto pl-3">{highCount}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-orange-500 inline-block" />
+                        <span className="text-muted-foreground">Medium</span>
+                        <span className="font-semibold text-foreground ml-auto pl-3">{medCount}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
+                        <span className="text-muted-foreground">Low Risk</span>
+                        <span className="font-semibold text-foreground ml-auto pl-3">{lowCount}</span>
+                      </div>
+                    </div>
+                    <div className="ml-auto text-right">
+                      <p className="text-lg font-bold text-foreground">{churnRiskList.length}</p>
+                      <p className="text-[10px] text-muted-foreground">at risk</p>
+                    </div>
+                  </div>
+                );
+              })()}
+              <div className="space-y-2 overflow-y-auto flex-1 min-h-0 pb-1">
               {churnRiskList.slice(0, 10).map((customer, idx) => (
                 <div key={idx} className="p-2.5 bg-muted/50 rounded border border-border hover:bg-muted transition-colors">
                   <div className="flex items-center justify-between mb-1">
@@ -1025,16 +1308,45 @@ const inventoryForecastList = useMemo(() => {
                 </div>
               ))}
             </div>
+            </>
           ) : (
             <div className="h-80 flex items-center justify-center">
-              <p className="text-xs text-muted-foreground text-center">No churn risks detected</p>
+              <div className="text-center space-y-3 px-4">
+                {analyticsStatus === 'processing' ? (
+                  <>
+                    <motion.div
+                      animate={{ scale: [1, 1.1, 1] }}
+                      transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+                      className="mx-auto w-fit"
+                    >
+                      <Users className="w-8 h-8 text-violet-500" />
+                    </motion.div>
+                    <p className="text-sm font-medium text-violet-500">Running Churn Analysis</p>
+                    <p className="text-xs text-muted-foreground">XGBoost model scoring all customers...</p>
+                  </>
+                ) : analyticsStatus === 'error' ? (
+                  <>
+                    <AlertCircle className="w-8 h-8 text-amber-500 mx-auto" />
+                    <p className="text-sm font-medium text-amber-500">Analysis Unavailable</p>
+                    <p className="text-xs text-muted-foreground">Try refreshing the AI models</p>
+                  </>
+                ) : (
+                  <>
+                    <div className="w-10 h-10 rounded-full bg-green-500/10 flex items-center justify-center mx-auto">
+                      <CheckCircle className="w-6 h-6 text-green-500" />
+                    </div>
+                    <p className="text-sm font-medium text-green-600 dark:text-green-400">All Customers Retained</p>
+                    <p className="text-xs text-muted-foreground">No churn risk detected right now</p>
+                  </>
+                )}
+              </div>
             </div>
           )}
         </CardContent>
       </Card>
 
       {/* Stockout Alerts */}
-      <Card className="col-span-1 border-border shadow-sm flex flex-col h-[400px]">
+      <Card className="border-border shadow-sm flex flex-col h-[400px]">
         <CardHeader className="pb-2 border-b bg-muted/20">
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-2">
@@ -1075,7 +1387,17 @@ const inventoryForecastList = useMemo(() => {
                       <TableRow key={i} className="h-12 hover:bg-muted/50">
                         <TableCell className="py-1 pl-4">
                           <div className="font-medium text-xs line-clamp-1">{item.name}</div>
-                          <div className="text-[10px] text-muted-foreground">Stock: {stock} units</div>
+                          <div className="text-[10px] text-muted-foreground mb-1">Stock: {stock} units</div>
+                          <div className="w-full h-1.5 rounded-full bg-muted overflow-hidden">
+                            <div 
+                              className={`h-full rounded-full transition-all ${
+                                daysLeft < 3 ? 'bg-red-500' : 
+                                daysLeft < 7 ? 'bg-orange-400' : 
+                                'bg-emerald-500'
+                              }`}
+                              style={{ width: `${Math.min(100, (daysLeft / 30) * 100)}%` }}
+                            />
+                          </div>
                         </TableCell>
                         <TableCell className="py-1 text-center px-1">
                           <Badge variant={daysLeft < 3 ? "destructive" : "outline"} className="h-5 text-[10px] px-1.5 whitespace-nowrap">
@@ -1112,36 +1434,52 @@ const inventoryForecastList = useMemo(() => {
             </div>
           ) : (
             <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
-               <Package className="w-8 h-8 opacity-20 mb-2" />
-               <p className="text-xs">Inventory levels optimal.</p>
+              {analyticsStatus === 'processing' ? (
+                <>
+                  <motion.div
+                    animate={{ y: [0, -4, 0] }}
+                    transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+                  >
+                    <Package className="w-8 h-8 text-orange-400 mb-2" />
+                  </motion.div>
+                  <p className="text-xs font-medium text-orange-400">Running Stockout Simulation</p>
+                  <p className="text-xs mt-1 text-center px-4">Monte Carlo model running 10,000 scenarios...</p>
+                </>
+              ) : analyticsStatus === 'error' ? (
+                <>
+                  <AlertCircle className="w-8 h-8 text-amber-500 mb-2" />
+                  <p className="text-xs font-medium text-amber-500">Prediction Unavailable</p>
+                  <p className="text-xs mt-1">Try refreshing the AI models</p>
+                </>
+              ) : (
+                <>
+                  <div className="w-10 h-10 rounded-full bg-green-500/10 flex items-center justify-center mb-2">
+                    <Package className="w-5 h-5 text-green-500" />
+                  </div>
+                  <p className="text-xs font-medium text-green-600 dark:text-green-400">Inventory Levels Optimal</p>
+                  <p className="text-xs mt-1">No stockout risk in the next 30 days</p>
+                </>
+              )}
             </div>
           )}
         </CardContent>
       </Card>
+      </div>
     </div>
   );
   
   // ============================================================================
-  // RENDER: MAIN CONTENT WITH TABS (FIXED LAYOUT)
+  // RENDER: MAIN CONTENT (STRIPPED TABS WRAPPER)
   // ============================================================================
   const MainContentGrid = () => (
-    <motion.div variants={cardVariants} className="px-6 pb-6">
-      <Tabs value={activeMainTab} onValueChange={setActiveMainTab} className="w-full">
-        <TabsList className="grid w-full max-w-md grid-cols-2 h-9 mb-4">
-          <TabsTrigger value="overview" className="text-xs">Overview</TabsTrigger>
-          <TabsTrigger value="ai" className="text-xs gap-1.5">
-            <Brain className="w-3.5 h-3.5" />
-            AI Intelligence
-          </TabsTrigger>
-        </TabsList>
-        
+    <>
         {/* OVERVIEW TAB: 60/40 Split */}
         <TabsContent value="overview" className="mt-0">
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-            <div className="lg:col-span-3">
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 items-stretch">
+            <div className="lg:col-span-3 flex flex-col">
               <RevenueForecastCard />
             </div>
-            <div className="lg:col-span-2">
+            <div className="lg:col-span-2 flex flex-col">
               <DebtStockPanel />
             </div>
           </div>
@@ -1151,28 +1489,54 @@ const inventoryForecastList = useMemo(() => {
         <TabsContent value="ai" className="mt-0">
           <AIAnalyticsContent />
         </TabsContent>
-      </Tabs>
-    </motion.div>
+    </>
   );
   
   // ============================================================================
   // MAIN RENDER
   // ============================================================================
   return (
-    <div className="h-screen flex flex-col bg-background overflow-hidden">
-      <TopRail />
-      
-      <div className="flex-1 overflow-y-auto">
-        <motion.div
-          variants={containerVariants}
-          initial="hidden"
-          animate="visible"
-          className="space-y-4 py-4"
-        >
-          <KPIGrid />
-          <MainContentGrid />
-        </motion.div>
-      </div>
+    <div className="h-full flex flex-col bg-background overflow-hidden">
+      <Tabs
+        value={activeMainTab}
+        onValueChange={setActiveMainTab}
+        className="flex flex-col flex-1 min-h-0"
+      >
+        {/* STICKY ZONE — never scrolls */}
+        <div className="flex-none">
+          <motion.div
+            variants={containerVariants}
+            initial="hidden"
+            animate="visible"
+            className="space-y-4 pt-4"
+          >
+            <TopRail
+              onForceRefresh={handleForceRefresh}
+              isRefreshing={isRefreshing}
+              isExpertMode={isExpertMode}
+              setIsExpertMode={setIsExpertMode}
+              aiSummaryText={aiSummaryText}
+              isProcessing={isProcessing}
+            />
+            <KPIGrid />
+            <div className="px-6">
+              <TabsList className="grid w-full max-w-md grid-cols-2 h-9">
+                <TabsTrigger value="overview" className="text-xs">Overview</TabsTrigger>
+                <TabsTrigger value="ai" className="text-xs gap-1.5">
+                  <Brain className="w-3.5 h-3.5" />
+                  AI Intelligence
+                </TabsTrigger>
+              </TabsList>
+            </div>
+          </motion.div>
+        </div>
+        {/* SCROLLABLE ZONE — only content scrolls */}
+        <div className="flex-1 overflow-y-auto min-h-0">
+          <div className="px-6 pb-6 pt-4">
+            <MainContentGrid />
+          </div>
+        </div>
+      </Tabs>
     </div>
   );
 }

@@ -46,7 +46,7 @@ class StockoutPredictor:
 
         self.analyzer = DemandAnalyzer(db_engine)
         self.simulator = MonteCarloSimulator(
-            n_simulations=self.config.get("n_simulations", 10000),
+            n_simulations=self.config.get("n_simulations", 1000),
             forecast_days=self.config.get("forecast_days", 30),
         )
 

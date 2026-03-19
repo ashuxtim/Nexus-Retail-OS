@@ -1,5 +1,7 @@
 import os
+import sys
 import json
+import threading
 import pandas as pd
 import numpy as np
 from datetime import datetime
@@ -23,6 +25,8 @@ class MarketBasketAnalyzer:
     4. Cache results to 'ml_store' for instant dashboard access
     """
 
+    _global_analysis_lock = threading.Lock()
+
     def __init__(self, engine, base_dir=None):
         self.engine = engine
 
@@ -30,8 +34,10 @@ class MarketBasketAnalyzer:
         if base_dir:
             self.base_dir = base_dir
         else:
-            appdata = os.getenv("APPDATA") or os.path.expanduser("~")
-            self.base_dir = os.path.join(appdata, "NexusRetailOS")
+            if sys.platform == "win32":
+                self.base_dir = os.path.join(os.getenv("APPDATA"), "NexusRetailOS")
+            else:
+                self.base_dir = os.path.join(os.path.expanduser("~"), ".config", "NexusRetailOS")
 
         # Safe Cache Directory
         self.cache_dir = os.path.join(self.base_dir, "ml_store", "market_basket")
@@ -73,92 +79,103 @@ class MarketBasketAnalyzer:
             print(f"❌ Failed to save MBA cache: {e}")
 
     def generate_rules(
-        self, min_support=0.001, min_confidence=0.1, min_lift=1.0
+        self, min_support=0.0002, min_confidence=0.05, min_lift=1.5
     ) -> List[Dict]:
         """
         Main pipeline: Fetch Data -> FP-Growth -> Rules -> Cache.
         """
-        print("🛒 Starting Market Basket Analysis...")
+        # Lock guard — if a run is already in progress, return cache or empty
+        # instead of spawning a second memory-heavy FP-Growth process
+        if MarketBasketAnalyzer._global_analysis_lock.locked():
+            print("   ⏳ FP-Growth already running globally — returning current cache.")
+            return self.get_cached_rules() or []
 
-        # 1. Fetch Transactions (Last 90 days to keep it relevant)
-        transactions = self._fetch_transactions(days=90)
+        with MarketBasketAnalyzer._global_analysis_lock:
+            print("🛒 Starting Market Basket Analysis...")
 
-        if not transactions:
-            print("   ⚠️ No transactions found.")
-            return []
+            # 1. Fetch Transactions (Last 90 days to keep it relevant)
+            transactions = self._fetch_transactions(days=90)
 
-        print(f"   Analyzing {len(transactions)} transactions...")
+            if not transactions:
+                print("   ⚠️ No transactions found.")
+                return []
 
-        # 2. Encode Data (One-Hot)
-        te = TransactionEncoder()
-        te_ary = te.fit(transactions).transform(transactions)
-        df = pd.DataFrame(te_ary, columns=te.columns_)
+            print(f"   Analyzing {len(transactions)} transactions...")
 
-        # 3. Run FP-Growth
-        # use_colnames=True so we get item names, not indices
-        frequent_itemsets = fpgrowth(df, min_support=min_support, use_colnames=True)
+            # 2. Encode Data (One-Hot)
+            te = TransactionEncoder()
+            te_ary = te.fit(transactions).transform(transactions, sparse=True)
+            sparse_df = pd.DataFrame.sparse.from_spmatrix(te_ary, columns=te.columns_)
 
-        if frequent_itemsets.empty:
-            print("   ⚠️ No frequent itemsets found (try lowering min_support).")
-            return []
+            # 3. Run FP-Growth
+            # use_colnames=True so we get item names, not indices
+            frequent_itemsets = fpgrowth(sparse_df, min_support=min_support, use_colnames=True, max_len=3)
 
-        # 4. Generate Association Rules
-        rules_df = association_rules(
-            frequent_itemsets, metric="confidence", min_threshold=min_confidence
-        )
+            if frequent_itemsets.empty:
+                print("   ⚠️ No frequent itemsets found (try lowering min_support).")
+                self._save_to_cache([], {"algorithm": "FP-Growth",
+                                         "total_transactions": len(transactions),
+                                         "min_support": min_support,
+                                         "min_confidence": min_confidence})
+                return []
 
-        # Filter by Lift
-        rules_df = rules_df[rules_df["lift"] >= min_lift]
-
-        # Sort by Lift (Strongest associations first)
-        rules_df = rules_df.sort_values(by="lift", ascending=False)
-
-        print(f"   Found {len(rules_df)} association rules.")
-
-        # 5. Format for Frontend/JSON
-        results = []
-        for idx, row in rules_df.head(50).iterrows():  # Top 50 only
-            # Convert frozensets to clean lists
-            antecedents = list(row["antecedents"])
-            consequents = list(row["consequents"])
-
-            # Create clean string description: "Bread, Milk" instead of "['Bread', 'Milk']"
-            ant_str = ", ".join(str(x) for x in antecedents)
-            cons_str = ", ".join(str(x) for x in consequents)
-
-            results.append(
-                {
-                    "antecedent": antecedents,
-                    "consequent": consequents,
-                    "support": round(row["support"], 4),
-                    "confidence": round(row["confidence"], 4),
-                    "lift": round(row["lift"], 4),
-                    "conviction": (
-                        round(row["conviction"], 4)
-                        if not np.isinf(row["conviction"])
-                        else 0.0
-                    ),
-                    "leverage": round(row["leverage"], 4),
-                    "zhangs_metric": (
-                        round(row["zhangs_metric"], 4)
-                        if "zhangs_metric" in row
-                        else None
-                    ),
-                    # Fixed Description String
-                    "description": f"If buy {ant_str}, likely to buy {cons_str}",
-                }
+            # 4. Generate Association Rules
+            rules_df = association_rules(
+                frequent_itemsets, metric="confidence", min_threshold=min_confidence
             )
 
-        # 6. Save to Cache
-        metadata = {
-            "algorithm": "FP-Growth",
-            "total_transactions": len(transactions),
-            "min_support": min_support,
-            "min_confidence": min_confidence,
-        }
-        self._save_to_cache(results, metadata)
+            # Filter by Lift
+            rules_df = rules_df[rules_df["lift"] >= min_lift]
 
-        return results
+            # Sort by Lift (Strongest associations first)
+            rules_df = rules_df.sort_values(by="lift", ascending=False)
+
+            print(f"   Found {len(rules_df)} association rules.")
+
+            # 5. Format for Frontend/JSON
+            results = []
+            for idx, row in rules_df.head(50).iterrows():  # Top 50 only
+                # Convert frozensets to clean lists
+                antecedents = list(row["antecedents"])
+                consequents = list(row["consequents"])
+
+                # Create clean string description: "Bread, Milk" instead of "['Bread', 'Milk']"
+                ant_str = ", ".join(str(x) for x in antecedents)
+                cons_str = ", ".join(str(x) for x in consequents)
+
+                results.append(
+                    {
+                        "antecedent": antecedents,
+                        "consequent": consequents,
+                        "support": round(row["support"], 4),
+                        "confidence": round(row["confidence"], 4),
+                        "lift": round(row["lift"], 4),
+                        "conviction": (
+                            round(row["conviction"], 4)
+                            if not np.isinf(row["conviction"])
+                            else 0.0
+                        ),
+                        "leverage": round(row["leverage"], 4),
+                        "zhangs_metric": (
+                            round(row["zhangs_metric"], 4)
+                            if "zhangs_metric" in row
+                            else None
+                        ),
+                        # Fixed Description String
+                        "description": f"If buy {ant_str}, likely to buy {cons_str}",
+                    }
+                )
+
+            # 6. Save to Cache
+            metadata = {
+                "algorithm": "FP-Growth",
+                "total_transactions": len(transactions),
+                "min_support": min_support,
+                "min_confidence": min_confidence,
+            }
+            self._save_to_cache(results, metadata)
+
+            return results
 
     def _fetch_transactions(self, days=90) -> List[List[str]]:
         """
@@ -173,7 +190,12 @@ class MarketBasketAnalyzer:
             JOIN credit_sale_item i ON s.id = i.sale_id
             JOIN product_variant v ON i.variant_id = v.id
             JOIN product p ON v.product_id = p.id
-            WHERE s.sale_date >= date('now', :days_param)
+            WHERE s.id IN (
+                SELECT id FROM credit_sale
+                WHERE sale_date >= date('now', :days_param)
+                ORDER BY id DESC
+                LIMIT 10000
+            )
             ORDER BY s.id
         """)
 

@@ -4,6 +4,7 @@ import logging
 from datetime import datetime, timedelta
 from core.time_utils import now as tz_now
 from typing import Dict, Any
+import threading
 
 # --- ORM & DB Imports ---
 from sqlalchemy import Column, Integer, String, Float, ForeignKey
@@ -53,6 +54,9 @@ class AnalyticsEngine:
         self.churn_ai = ChurnPredictor(engine, base_dir=base_dir)
         self.basket_ai = MarketBasketAnalyzer(engine, base_dir=base_dir)
         self.forecast_ai = RevenueForecaster(engine, base_dir=base_dir)
+
+        # Threading lock for Market Basket Analyzer
+        self._basket_lock = threading.Lock()
 
         print("🔗 AnalyticsEngine: Coordinator initialized.")
 
@@ -168,9 +172,16 @@ class AnalyticsEngine:
             basket_rules = self.basket_ai.get_cached_rules()
             basket_metadata = None
 
-            if not basket_rules:
-                print("   ⏳ Market Basket cache miss. Analyzing patterns...")
-                basket_rules = self.basket_ai.generate_rules()
+            if basket_rules is None:
+                if self._basket_lock.acquire(blocking=False):
+                    try:
+                        print("   ⏳ Market Basket cache miss. Analyzing patterns...")
+                        basket_rules = self.basket_ai.generate_rules()
+                    finally:
+                        self._basket_lock.release()
+                else:
+                    print("   ⏳ Market Basket generation already in progress. Skipping...")
+                    basket_rules = [] # Return empty while waiting for the background thread
 
             if basket_rules:
                 basket_metadata = {"algorithm": "FP-Growth", "count": len(basket_rules)}
