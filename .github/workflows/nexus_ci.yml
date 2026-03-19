@@ -80,7 +80,7 @@ jobs:
     - name: 1. Run History Seed (Base DB)
       # Creates the database in a temp folder using the correct path
       run: |
-        python python_server/scripts/seed_database.py
+        python python_server/scripts/Seeding/run_seed.py
       env:
         # Mock APPDATA so the script writes to a temp folder GitHub can access
         APPDATA: ${{ runner.temp }} 
