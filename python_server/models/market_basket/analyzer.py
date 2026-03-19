@@ -37,7 +37,9 @@ class MarketBasketAnalyzer:
             if sys.platform == "win32":
                 self.base_dir = os.path.join(os.getenv("APPDATA"), "NexusRetailOS")
             else:
-                self.base_dir = os.path.join(os.path.expanduser("~"), ".config", "NexusRetailOS")
+                self.base_dir = os.path.join(
+                    os.path.expanduser("~"), ".config", "NexusRetailOS"
+                )
 
         # Safe Cache Directory
         self.cache_dir = os.path.join(self.base_dir, "ml_store", "market_basket")
@@ -109,14 +111,21 @@ class MarketBasketAnalyzer:
 
             # 3. Run FP-Growth
             # use_colnames=True so we get item names, not indices
-            frequent_itemsets = fpgrowth(sparse_df, min_support=min_support, use_colnames=True, max_len=3)
+            frequent_itemsets = fpgrowth(
+                sparse_df, min_support=min_support, use_colnames=True, max_len=3
+            )
 
             if frequent_itemsets.empty:
                 print("   ⚠️ No frequent itemsets found (try lowering min_support).")
-                self._save_to_cache([], {"algorithm": "FP-Growth",
-                                         "total_transactions": len(transactions),
-                                         "min_support": min_support,
-                                         "min_confidence": min_confidence})
+                self._save_to_cache(
+                    [],
+                    {
+                        "algorithm": "FP-Growth",
+                        "total_transactions": len(transactions),
+                        "min_support": min_support,
+                        "min_confidence": min_confidence,
+                    },
+                )
                 return []
 
             # 4. Generate Association Rules

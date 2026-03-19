@@ -55,7 +55,9 @@ class ChurnFeatureEngineer:
 
         # Defensive cast — daily_seed (numpy rng.choice) can store customer_id
         # as BLOB in SQLite. Mixed bytes/int breaks pandas groupby sort.
-        df["customer_id"] = pd.to_numeric(df["customer_id"], errors="coerce").astype("Int64")
+        df["customer_id"] = pd.to_numeric(df["customer_id"], errors="coerce").astype(
+            "Int64"
+        )
         df = df.dropna(subset=["customer_id"])
         df["customer_id"] = df["customer_id"].astype(int)
 

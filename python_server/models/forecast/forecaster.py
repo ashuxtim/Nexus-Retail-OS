@@ -33,7 +33,9 @@ class RevenueForecaster:
             if sys.platform == "win32":
                 self.base_dir = os.path.join(os.getenv("APPDATA"), "NexusRetailOS")
             else:
-                self.base_dir = os.path.join(os.path.expanduser("~"), ".config", "NexusRetailOS")
+                self.base_dir = os.path.join(
+                    os.path.expanduser("~"), ".config", "NexusRetailOS"
+                )
 
         # Safe Cache Directory
         self.cache_dir = os.path.join(self.base_dir, "ml_store", "forecast")

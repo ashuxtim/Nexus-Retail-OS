@@ -86,18 +86,16 @@ def build_nexus_agent(raw_engine, groq_key):
         except Exception as e:
             return f"❌ SQL Error: {str(e)}"
 
-    # 3. Build tool list 
+    # 3. Build tool list
     all_tools = [
         # Entity resolution and search
-        resolve_entity_tool,          # fuzzy name → ID lookup
-        search_catalog_tool,          # General search (products/customers/suppliers)
-        search_supplier_tool,         # Keep: exact supplier name SQL fallback
-
+        resolve_entity_tool,  # fuzzy name → ID lookup
+        search_catalog_tool,  # General search (products/customers/suppliers)
+        search_supplier_tool,  # Keep: exact supplier name SQL fallback
         # Product-specific ML tools
-        get_product_stockout_tool,    # Monte Carlo predictions for a specific product
-        get_product_basket_tool,      # FP-Growth associations for a specific product
+        get_product_stockout_tool,  # Monte Carlo predictions for a specific product
+        get_product_basket_tool,  # FP-Growth associations for a specific product
         get_customer_churn_for_product_tool,  # XGBoost churn for a product's buyers
-
         # Business-wide ML tools
         get_business_overview_tool,
         check_churn_risk_tool,
@@ -177,8 +175,7 @@ Example: WHERE date(cs.sale_date) = date('now', 'localtime')"""
 
     # 5. Create lean ReAct agent (15 tools)
     agent = create_react_agent(
-    agent_llm,
-    all_tools,
-    prompt=SystemMessage(content=system_prompt))
+        agent_llm, all_tools, prompt=SystemMessage(content=system_prompt)
+    )
 
     return agent, router_llm

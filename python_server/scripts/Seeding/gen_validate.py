@@ -31,57 +31,57 @@ DB_PATH = os.path.join(BASE_DIR, "nexus.db")
 # ═══════════════════════════════════════════════════════════════════════════
 CHECKS = [
     {
-        "name":   "Total sales (credit_sale rows)",
-        "model":  "All models",
-        "query":  "SELECT COUNT(*) FROM credit_sale",
-        "check":  lambda x: x >= 800_000,
+        "name": "Total sales (credit_sale rows)",
+        "model": "All models",
+        "query": "SELECT COUNT(*) FROM credit_sale",
+        "check": lambda x: x >= 800_000,
         "expect": ">= 800,000 rows",
-        "hint":   "Transaction volume too low — check S-curve growth and daily_tx_count()",
+        "hint": "Transaction volume too low — check S-curve growth and daily_tx_count()",
     },
     {
-        "name":   "Total sale items (credit_sale_item rows)",
-        "model":  "All models",
-        "query":  "SELECT COUNT(*) FROM credit_sale_item",
-        "check":  lambda x: x >= 4_000_000,
+        "name": "Total sale items (credit_sale_item rows)",
+        "model": "All models",
+        "query": "SELECT COUNT(*) FROM credit_sale_item",
+        "check": lambda x: x >= 4_000_000,
         "expect": ">= 4,000,000 rows",
-        "hint":   "Item count too low — check basket builder",
+        "hint": "Item count too low — check basket builder",
     },
     {
-        "name":   "Prophet — distinct revenue days (last 730)",
-        "model":  "FB Prophet",
-        "query":  "SELECT COUNT(DISTINCT DATE(s.sale_date)) FROM credit_sale s WHERE s.sale_date >= date('now', '-730 days')",
-        "check":  lambda x: x >= 700,
+        "name": "Prophet — distinct revenue days (last 730)",
+        "model": "FB Prophet",
+        "query": "SELECT COUNT(DISTINCT DATE(s.sale_date)) FROM credit_sale s WHERE s.sale_date >= date('now', '-730 days')",
+        "check": lambda x: x >= 700,
         "expect": ">= 700 non-zero days in last 730",
-        "hint":   "Prophet needs 2+ years dense data. Ensure simulation covers up to today.",
+        "hint": "Prophet needs 2+ years dense data. Ensure simulation covers up to today.",
     },
     {
-        "name":   "FP-Growth — transactions in last 90 days",
-        "model":  "FP-Growth",
-        "query":  "SELECT COUNT(*) FROM credit_sale WHERE sale_date >= date('now', '-90 days')",
-        "check":  lambda x: x >= 40_000,
+        "name": "FP-Growth — transactions in last 90 days",
+        "model": "FP-Growth",
+        "query": "SELECT COUNT(*) FROM credit_sale WHERE sale_date >= date('now', '-90 days')",
+        "check": lambda x: x >= 40_000,
         "expect": ">= 40,000 transactions in last 90 days",
-        "hint":   "Last 90 days too sparse. Check that simulation ends near today.",
+        "hint": "Last 90 days too sparse. Check that simulation ends near today.",
     },
     {
-        "name":   "FP-Growth — average basket size",
-        "model":  "FP-Growth",
-        "query":  "SELECT AVG(cnt) FROM (SELECT sale_id, COUNT(*) as cnt FROM credit_sale_item GROUP BY sale_id)",
-        "check":  lambda x: x is not None and x >= 2.5,
+        "name": "FP-Growth — average basket size",
+        "model": "FP-Growth",
+        "query": "SELECT AVG(cnt) FROM (SELECT sale_id, COUNT(*) as cnt FROM credit_sale_item GROUP BY sale_id)",
+        "check": lambda x: x is not None and x >= 2.5,
         "expect": "avg basket >= 2.5 items per sale",
-        "hint":   "Basket too small. Increase random items in build_basket()",
+        "hint": "Basket too small. Increase random items in build_basket()",
     },
     {
-        "name":   "XGBoost — active customers (bought last 90 days)",
-        "model":  "XGBoost Churn",
-        "query":  "SELECT COUNT(DISTINCT customer_id) FROM credit_sale WHERE sale_date >= date('now', '-90 days')",
-        "check":  lambda x: x >= 2000,
+        "name": "XGBoost — active customers (bought last 90 days)",
+        "model": "XGBoost Churn",
+        "query": "SELECT COUNT(DISTINCT customer_id) FROM credit_sale WHERE sale_date >= date('now', '-90 days')",
+        "check": lambda x: x >= 2000,
         "expect": ">= 2,000 active customers last 90 days",
-        "hint":   "Too few recent customers. Ensure customer join_days and churn_days are spread correctly.",
+        "hint": "Too few recent customers. Ensure customer join_days and churn_days are spread correctly.",
     },
     {
-        "name":   "XGBoost — churned customers (no buy last 60d, bought before)",
-        "model":  "XGBoost Churn",
-        "query":  """
+        "name": "XGBoost — churned customers (no buy last 60d, bought before)",
+        "model": "XGBoost Churn",
+        "query": """
             SELECT COUNT(*) FROM customer c
             WHERE EXISTS (
                 SELECT 1 FROM credit_sale
@@ -94,54 +94,54 @@ CHECKS = [
                 AND sale_date >= date('now', '-60 days')
             )
         """,
-        "check":  lambda x: x >= 300,
+        "check": lambda x: x >= 300,
         "expect": ">= 300 churned customers for training label",
-        "hint":   "Too few churned labels. Ensure 15% permanent churn is applied correctly.",
+        "hint": "Too few churned labels. Ensure 15% permanent churn is applied correctly.",
     },
     {
-        "name":   "Monte Carlo — variants with demand data (last 90 days)",
-        "model":  "Monte Carlo",
-        "query":  """
+        "name": "Monte Carlo — variants with demand data (last 90 days)",
+        "model": "Monte Carlo",
+        "query": """
             SELECT COUNT(DISTINCT i.variant_id)
             FROM credit_sale_item i
             JOIN credit_sale s ON s.id = i.sale_id
             WHERE s.sale_date >= date('now', '-90 days')
         """,
-        "check":  lambda x: x >= 200,
+        "check": lambda x: x >= 200,
         "expect": ">= 200 variants with demand history",
-        "hint":   "Too few variants sold recently. Check that sales cover most product variants.",
+        "hint": "Too few variants sold recently. Check that sales cover most product variants.",
     },
     {
-        "name":   "Credit stability — no customer over ₹1,00,000",
-        "model":  "Credit System",
-        "query":  "SELECT COUNT(*) FROM customer WHERE balance > 100000",
-        "check":  lambda x: x == 0,
+        "name": "Credit stability — no customer over ₹1,00,000",
+        "model": "Credit System",
+        "query": "SELECT COUNT(*) FROM customer WHERE balance > 100000",
+        "check": lambda x: x == 0,
         "expect": "0 customers with balance > ₹1,00,000",
-        "hint":   "Credit runaway detected. Check hard-ceiling enforcement in payment logic.",
+        "hint": "Credit runaway detected. Check hard-ceiling enforcement in payment logic.",
     },
     {
-        "name":   "Credit stability — average outstanding balance",
-        "model":  "Credit System",
-        "query":  "SELECT AVG(balance) FROM customer WHERE balance > 0",
-        "check":  lambda x: x is None or (300 <= x <= 30000),
+        "name": "Credit stability — average outstanding balance",
+        "model": "Credit System",
+        "query": "SELECT AVG(balance) FROM customer WHERE balance > 0",
+        "check": lambda x: x is None or (300 <= x <= 30000),
         "expect": "avg credit balance ₹300 – ₹30,000",
-        "hint":   "Credit avg out of range. Check salary-week clearance and spontaneous payment rates.",
+        "hint": "Credit avg out of range. Check salary-week clearance and spontaneous payment rates.",
     },
     {
-        "name":   "Purchase invoices — no NULL supplier_id",
-        "model":  "Stockout / Suppliers",
-        "query":  "SELECT COUNT(*) FROM purchase_invoice WHERE supplier_id IS NULL",
-        "check":  lambda x: x == 0,
+        "name": "Purchase invoices — no NULL supplier_id",
+        "model": "Stockout / Suppliers",
+        "query": "SELECT COUNT(*) FROM purchase_invoice WHERE supplier_id IS NULL",
+        "check": lambda x: x == 0,
         "expect": "0 invoices with NULL supplier_id",
-        "hint":   "Some invoices lack supplier. Check fallback supplier assignment in restock logic.",
+        "hint": "Some invoices lack supplier. Check fallback supplier assignment in restock logic.",
     },
     {
-        "name":   "Product variants — no negative stock",
-        "model":  "Monte Carlo",
-        "query":  "SELECT COUNT(*) FROM product_variant WHERE current_stock < 0",
-        "check":  lambda x: x == 0,
+        "name": "Product variants — no negative stock",
+        "model": "Monte Carlo",
+        "query": "SELECT COUNT(*) FROM product_variant WHERE current_stock < 0",
+        "check": lambda x: x == 0,
         "expect": "0 variants with negative current_stock",
-        "hint":   "Negative stock exists. Ensure inventory never goes below 0 in simulation.",
+        "hint": "Negative stock exists. Ensure inventory never goes below 0 in simulation.",
     },
 ]
 
@@ -149,23 +149,35 @@ CHECKS = [
 #  SUMMARY STATS  (no pass/fail, just informational)
 # ═══════════════════════════════════════════════════════════════════════════
 SUMMARY_QUERIES = [
-    ("Products",          "SELECT COUNT(*) FROM product"),
-    ("Variants",          "SELECT COUNT(*) FROM product_variant"),
-    ("Customers",         "SELECT COUNT(*) FROM customer"),
-    ("Credit customers",  "SELECT COUNT(*) FROM customer WHERE balance > 0"),
-    ("Suppliers",         "SELECT COUNT(*) FROM supplier"),
-    ("Sales",             "SELECT COUNT(*) FROM credit_sale"),
-    ("Sale items",        "SELECT COUNT(*) FROM credit_sale_item"),
-    ("Payments",          "SELECT COUNT(*) FROM payment"),
-    ("Invoices",          "SELECT COUNT(*) FROM purchase_invoice"),
-    ("Purchase items",    "SELECT COUNT(*) FROM purchase_item"),
-    ("Low-stock variants","SELECT COUNT(*) FROM product_variant WHERE current_stock < 15"),
-    ("Avg basket size",   "SELECT ROUND(AVG(cnt),2) FROM (SELECT sale_id, COUNT(*) cnt FROM credit_sale_item GROUP BY sale_id)"),
-    ("Avg credit balance","SELECT ROUND(AVG(balance),2) FROM customer WHERE balance > 0"),
-    ("Max credit balance","SELECT ROUND(MAX(balance),2) FROM customer"),
-    ("Earliest sale",     "SELECT MIN(sale_date) FROM credit_sale"),
-    ("Latest sale",       "SELECT MAX(sale_date) FROM credit_sale"),
-    ("Revenue last 30d",  "SELECT ROUND(SUM(i.quantity * i.price_at_sale),2) FROM credit_sale_item i JOIN credit_sale s ON s.id=i.sale_id WHERE s.sale_date >= date('now','-30 days')"),
+    ("Products", "SELECT COUNT(*) FROM product"),
+    ("Variants", "SELECT COUNT(*) FROM product_variant"),
+    ("Customers", "SELECT COUNT(*) FROM customer"),
+    ("Credit customers", "SELECT COUNT(*) FROM customer WHERE balance > 0"),
+    ("Suppliers", "SELECT COUNT(*) FROM supplier"),
+    ("Sales", "SELECT COUNT(*) FROM credit_sale"),
+    ("Sale items", "SELECT COUNT(*) FROM credit_sale_item"),
+    ("Payments", "SELECT COUNT(*) FROM payment"),
+    ("Invoices", "SELECT COUNT(*) FROM purchase_invoice"),
+    ("Purchase items", "SELECT COUNT(*) FROM purchase_item"),
+    (
+        "Low-stock variants",
+        "SELECT COUNT(*) FROM product_variant WHERE current_stock < 15",
+    ),
+    (
+        "Avg basket size",
+        "SELECT ROUND(AVG(cnt),2) FROM (SELECT sale_id, COUNT(*) cnt FROM credit_sale_item GROUP BY sale_id)",
+    ),
+    (
+        "Avg credit balance",
+        "SELECT ROUND(AVG(balance),2) FROM customer WHERE balance > 0",
+    ),
+    ("Max credit balance", "SELECT ROUND(MAX(balance),2) FROM customer"),
+    ("Earliest sale", "SELECT MIN(sale_date) FROM credit_sale"),
+    ("Latest sale", "SELECT MAX(sale_date) FROM credit_sale"),
+    (
+        "Revenue last 30d",
+        "SELECT ROUND(SUM(i.quantity * i.price_at_sale),2) FROM credit_sale_item i JOIN credit_sale s ON s.id=i.sale_id WHERE s.sale_date >= date('now','-30 days')",
+    ),
 ]
 
 
@@ -184,7 +196,7 @@ def main():
         sys.exit(1)
 
     conn = sqlite3.connect(DB_PATH)
-    c    = conn.cursor()
+    c = conn.cursor()
 
     # ── Run checks ─────────────────────────────────────────────────────────
     print(f"\n{'─' * 66}")
@@ -198,10 +210,10 @@ def main():
     for chk in CHECKS:
         try:
             result = c.execute(chk["query"].strip()).fetchone()[0]
-            ok     = chk["check"](result)
+            ok = chk["check"](result)
         except Exception as e:
             result = f"ERROR: {e}"
-            ok     = False
+            ok = False
 
         # Format result value for display
         if isinstance(result, float):
@@ -212,7 +224,7 @@ def main():
             rstr = str(result)
 
         status = "✅" if ok else "❌"
-        label  = chk["name"][:45].ljust(46)
+        label = chk["name"][:45].ljust(46)
         print(f"  {status}  {label} → {rstr:>15}  ({chk['expect']})")
 
         if ok:
@@ -252,12 +264,16 @@ def main():
 
     # ── Final verdict ──────────────────────────────────────────────────────
     elapsed = time.time() - t0
-    total   = passed + failed
+    total = passed + failed
     print(f"\n{'═' * 66}")
     if failed == 0:
-        print(f"  🎉  RESULT: {passed}/{total} checks PASSED — Seed is ML-ready!  ({elapsed:.1f}s)")
+        print(
+            f"  🎉  RESULT: {passed}/{total} checks PASSED — Seed is ML-ready!  ({elapsed:.1f}s)"
+        )
     else:
-        print(f"  ⚠️   RESULT: {passed}/{total} passed, {failed} FAILED.  ({elapsed:.1f}s)")
+        print(
+            f"  ⚠️   RESULT: {passed}/{total} passed, {failed} FAILED.  ({elapsed:.1f}s)"
+        )
         print(f"  Re-run after reviewing the hints above.")
     print(f"{'═' * 66}\n")
 

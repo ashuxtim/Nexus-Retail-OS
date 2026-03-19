@@ -38,7 +38,7 @@ class SmartSearchEngine:
         self.is_ready = False
         self.is_loading = False
         self.load_error = None
-        
+
         # Threading lock for polling loop
         self._sync_lock = threading.Lock()
 
@@ -70,15 +70,16 @@ class SmartSearchEngine:
 
             # 2. Initialize ChromaDB persistent client
             self.client = chromadb.PersistentClient(
-                path=self.chroma_dir,
-                settings=Settings(anonymized_telemetry=False)
+                path=self.chroma_dir, settings=Settings(anonymized_telemetry=False)
             )
 
             # 3. Get or create all three collections
             for name in self.collections:
                 self.collections[name] = self.client.get_or_create_collection(
                     name=name,
-                    metadata={"hnsw:space": "cosine"}  # cosine similarity — better than L2
+                    metadata={
+                        "hnsw:space": "cosine"
+                    },  # cosine similarity — better than L2
                 )
 
             # 4. Do initial full sync for all three entities
@@ -95,8 +96,10 @@ class SmartSearchEngine:
             self.load_error = None
 
             counts = {k: self.collections[k].count() for k in self.collections}
-            print(f"✅ ChromaDB ready. Products: {counts['product']} | "
-                  f"Customers: {counts['customer']} | Suppliers: {counts['supplier']}")
+            print(
+                f"✅ ChromaDB ready. Products: {counts['product']} | "
+                f"Customers: {counts['customer']} | Suppliers: {counts['supplier']}"
+            )
 
         except Exception as e:
             self.load_error = str(e)
@@ -126,16 +129,18 @@ class SmartSearchEngine:
             # --- FETCH FROM DATABASE ---
             with db_engine.connect() as conn:
                 if entity_type == "product":
-                    rows = conn.execute(text(
-                        """SELECT v.id, v.name as v_name, p.name as p_name, 
+                    rows = conn.execute(
+                        text("""SELECT v.id, v.name as v_name, p.name as p_name, 
                                   p.category, v.price, v.current_stock
                            FROM product_variant v 
                            JOIN product p ON v.product_id = p.id
-                           WHERE v.current_stock >= 0"""
-                    )).fetchall()
+                           WHERE v.current_stock >= 0""")
+                    ).fetchall()
+
                     def make_doc(row):
                         # category included for category-based queries like "cold drinks"
                         return f"{row.p_name} {row.v_name} {row.category or ''}"
+
                     def make_meta(row):
                         return {
                             "variant_id": row.id,
@@ -144,36 +149,40 @@ class SmartSearchEngine:
                             "category": row.category or "",
                             "price": float(row.price or 0),
                             "current_stock": float(row.current_stock or 0),
-                            "entity_type": "product"
+                            "entity_type": "product",
                         }
 
                 elif entity_type == "customer":
-                    rows = conn.execute(text(
-                        "SELECT id, name, mobile, address FROM customer"
-                    )).fetchall()
+                    rows = conn.execute(
+                        text("SELECT id, name, mobile, address FROM customer")
+                    ).fetchall()
+
                     def make_doc(row):
                         address = row.address or ""
                         return f"{row.name} {address}"
+
                     def make_meta(row):
                         return {
                             "customer_id": row.id,
                             "name": row.name,
                             "mobile": str(row.mobile or ""),
-                            "entity_type": "customer"
+                            "entity_type": "customer",
                         }
 
                 elif entity_type == "supplier":
-                    rows = conn.execute(text(
-                        "SELECT id, name, mobile FROM supplier"
-                    )).fetchall()
+                    rows = conn.execute(
+                        text("SELECT id, name, mobile FROM supplier")
+                    ).fetchall()
+
                     def make_doc(row):
                         return f"{row.name}"
+
                     def make_meta(row):
                         return {
                             "supplier_id": row.id,
                             "name": row.name,
                             "mobile": str(row.mobile or ""),
-                            "entity_type": "supplier"
+                            "entity_type": "supplier",
                         }
 
             if not rows:
@@ -190,7 +199,9 @@ class SmartSearchEngine:
             to_delete = chroma_ids - db_ids
             if to_delete:
                 collection.delete(ids=list(to_delete))
-                print(f"   🗑️ ChromaDB [{entity_type}]: Removed {len(to_delete)} zombie records.")
+                print(
+                    f"   🗑️ ChromaDB [{entity_type}]: Removed {len(to_delete)} zombie records."
+                )
 
             # ADD new records (in SQLite but not in ChromaDB)
             to_add_ids = db_ids - chroma_ids
@@ -199,31 +210,35 @@ class SmartSearchEngine:
                 docs = [make_doc(row) for row in new_rows]
                 metas = [make_meta(row) for row in new_rows]
                 ids = [str(row.id) for row in new_rows]
-                
+
                 # Encode in batches to avoid memory spikes on large catalogs
-                embeddings = self.model.encode(docs, batch_size=64, show_progress_bar=False)
-                
+                embeddings = self.model.encode(
+                    docs, batch_size=64, show_progress_bar=False
+                )
+
                 # ChromaDB has max batch size limit of 5461 elements.
                 # Process strictly in smaller chunks to prevent insertion failure.
                 BATCH_LIMIT = 5000
                 total_items = len(new_rows)
-                
+
                 # We need embeddings as list for ChromaDB
                 embeddings_list = embeddings.tolist()
-                
+
                 for i in range(0, total_items, BATCH_LIMIT):
-                    batch_ids = ids[i:i + BATCH_LIMIT]
-                    batch_embeddings = embeddings_list[i:i + BATCH_LIMIT]
-                    batch_documents = docs[i:i + BATCH_LIMIT]
-                    batch_metadatas = metas[i:i + BATCH_LIMIT]
-                    
+                    batch_ids = ids[i : i + BATCH_LIMIT]
+                    batch_embeddings = embeddings_list[i : i + BATCH_LIMIT]
+                    batch_documents = docs[i : i + BATCH_LIMIT]
+                    batch_metadatas = metas[i : i + BATCH_LIMIT]
+
                     collection.add(
                         ids=batch_ids,
                         embeddings=batch_embeddings,
                         documents=batch_documents,
-                        metadatas=batch_metadatas
+                        metadatas=batch_metadatas,
                     )
-                print(f"   ✅ ChromaDB [{entity_type}]: Added {len(to_add_ids)} new records.")
+                print(
+                    f"   ✅ ChromaDB [{entity_type}]: Added {len(to_add_ids)} new records."
+                )
 
     def search(self, entity_type, query, limit=5):
         """
@@ -232,9 +247,15 @@ class SmartSearchEngine:
         """
         if not self.is_ready:
             if self.is_loading:
-                return {"error": "warming_up", "message": "⏳ AI System is warming up... Please try in 30 seconds."}
+                return {
+                    "error": "warming_up",
+                    "message": "⏳ AI System is warming up... Please try in 30 seconds.",
+                }
             if self.load_error:
-                return {"error": "load_failed", "message": f"❌ AI System failed: {self.load_error}"}
+                return {
+                    "error": "load_failed",
+                    "message": f"❌ AI System failed: {self.load_error}",
+                }
             return {"error": "offline", "message": "❌ AI System is offline."}
 
         collection = self.collections.get(entity_type)
@@ -245,14 +266,14 @@ class SmartSearchEngine:
         results = collection.query(
             query_texts=[query],
             n_results=fetch_limit,
-            include=["metadatas", "distances", "documents"]
+            include=["metadatas", "distances", "documents"],
         )
 
         matches = []
-        
+
         if not results["metadatas"] or not results["metadatas"][0]:
             return {"error": "empty", "message": f"No {entity_type} matches found."}
-            
+
         metadatas = results["metadatas"][0]
         distances = results["distances"][0]
 
@@ -260,10 +281,7 @@ class SmartSearchEngine:
             # ChromaDB cosine distance: 0 = identical, 2 = opposite
             # Convert to similarity percentage
             similarity = round((1 - dist) * 100, 1)
-            matches.append({
-                **meta,
-                "similarity": similarity
-            })
+            matches.append({**meta, "similarity": similarity})
 
         # Deduplicate by brand (first word of product_name), max 3 per brand
         if entity_type == "product":
@@ -274,7 +292,7 @@ class SmartSearchEngine:
                 p_name = m.get("product_name", "")
                 parts = p_name.split()
                 brand = parts[0] if parts else ""
-                
+
                 count = seen_brands.get(brand, 0)
                 if count < 5:
                     deduped.append(m)
@@ -285,7 +303,7 @@ class SmartSearchEngine:
             "entity_type": entity_type,
             "query": query,
             "count": len(matches),
-            "matches": matches
+            "matches": matches,
         }
 
     def search_display(self, entity_type, query, limit=5):
@@ -302,8 +320,10 @@ class SmartSearchEngine:
         for m in result["matches"]:
             sim = m["similarity"]
             if entity_type == "product":
-                output += (f"- [ID: {m['variant_id']}] **{m['product_name']} {m['variant_name']}** "
-                           f"[{m['category']}] (Stock: {m['current_stock']}) | Match: {sim}%\n")
+                output += (
+                    f"- [ID: {m['variant_id']}] **{m['product_name']} {m['variant_name']}** "
+                    f"[{m['category']}] (Stock: {m['current_stock']}) | Match: {sim}%\n"
+                )
             elif entity_type == "customer":
                 output += f"- [ID: {m['customer_id']}] **{m['name']}** (Mobile: {m['mobile']}) | Match: {sim}%\n"
             elif entity_type == "supplier":

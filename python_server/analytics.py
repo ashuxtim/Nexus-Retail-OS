@@ -180,8 +180,12 @@ class AnalyticsEngine:
                     finally:
                         self._basket_lock.release()
                 else:
-                    print("   ⏳ Market Basket generation already in progress. Skipping...")
-                    basket_rules = [] # Return empty while waiting for the background thread
+                    print(
+                        "   ⏳ Market Basket generation already in progress. Skipping..."
+                    )
+                    basket_rules = (
+                        []
+                    )  # Return empty while waiting for the background thread
 
             if basket_rules:
                 basket_metadata = {"algorithm": "FP-Growth", "count": len(basket_rules)}
@@ -229,13 +233,17 @@ class AnalyticsEngine:
                     for item in os.listdir(ml_store_path):
                         item_path = os.path.join(ml_store_path, item)
                         if item == "chroma":
-                            print("   ⏭️  Skipping ChromaDB directory (vector store preserved).")
+                            print(
+                                "   ⏭️  Skipping ChromaDB directory (vector store preserved)."
+                            )
                             continue
                         if os.path.isdir(item_path):
                             shutil.rmtree(item_path)
                         else:
                             os.remove(item_path)
-                    print(f"   🗑️  SUCCESS: Cleared 'ml_store' folder (preserved chroma).")
+                    print(
+                        f"   🗑️  SUCCESS: Cleared 'ml_store' folder (preserved chroma)."
+                    )
                 except Exception as e:
                     print(f"   ❌ Error clearing folder: {e}")
             else:

@@ -39,33 +39,58 @@ elif sys.platform == "win32":
 else:
     BASE_DIR = os.path.join(os.path.expanduser("~"), ".config", "NexusRetailOS")
 
-DB_PATH   = os.path.join(BASE_DIR, "nexus.db")
+DB_PATH = os.path.join(BASE_DIR, "nexus.db")
 MAPS_PATH = os.path.join(BASE_DIR, "nexus_seed_maps.json")
 
-PAYMENT_MODES = ['Cash', 'UPI', 'Card', 'Bank Transfer']
+PAYMENT_MODES = ["Cash", "UPI", "Card", "Bank Transfer"]
 PAYMENT_WEIGHTS = [50, 30, 15, 5]
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  COMBO / AFFINITY TABLES  (must match gen_transactions.py)
 # ═══════════════════════════════════════════════════════════════════════════
 STRONG_COMBOS = [
-    ("Maggi","Britannia",0.38), ("Maggi","Amul",0.35), ("Maggi","Tata Salt",0.28),
-    ("Lays","Coca Cola",0.40),  ("Lays","Pepsi",0.35), ("Lays","Kurkure",0.30),
-    ("Kurkure","Pepsi",0.32),   ("Sprite","Haldiram",0.25),
-    ("Britannia","Mother Dairy",0.35), ("Parle","Amul",0.28),
-    ("Tata Salt","Aashirvaad",0.40),   ("Fortune","Aashirvaad",0.35),
-    ("Colgate","Lux",0.22),            ("Top Ramen","Yippee",0.28),
+    ("Maggi", "Britannia", 0.38),
+    ("Maggi", "Amul", 0.35),
+    ("Maggi", "Tata Salt", 0.28),
+    ("Lays", "Coca Cola", 0.40),
+    ("Lays", "Pepsi", 0.35),
+    ("Lays", "Kurkure", 0.30),
+    ("Kurkure", "Pepsi", 0.32),
+    ("Sprite", "Haldiram", 0.25),
+    ("Britannia", "Mother Dairy", 0.35),
+    ("Parle", "Amul", 0.28),
+    ("Tata Salt", "Aashirvaad", 0.40),
+    ("Fortune", "Aashirvaad", 0.35),
+    ("Colgate", "Lux", 0.22),
+    ("Top Ramen", "Yippee", 0.28),
 ]
 CAT_AFFINITY = [
-    ("Snacks","Beverages",0.52),   ("Dairy","Bakery",0.42),
-    ("Staples","Staples",0.30),    ("Personal Care","Cleaning",0.35),
-    ("Instant Food","Dairy",0.30), ("Bakery","Dairy",0.38),
-    ("Confectionery","Beverages",0.28),
+    ("Snacks", "Beverages", 0.52),
+    ("Dairy", "Bakery", 0.42),
+    ("Staples", "Staples", 0.30),
+    ("Personal Care", "Cleaning", 0.35),
+    ("Instant Food", "Dairy", 0.30),
+    ("Bakery", "Dairy", 0.38),
+    ("Confectionery", "Beverages", 0.28),
 ]
 FAST_MOVER_KWS = [
-    "maggi","lays","kurkure","coca cola","pepsi","sprite","frooti","maaza",
-    "amul","britannia","bisleri","thums up","mountain dew","yippee","top ramen",
+    "maggi",
+    "lays",
+    "kurkure",
+    "coca cola",
+    "pepsi",
+    "sprite",
+    "frooti",
+    "maaza",
+    "amul",
+    "britannia",
+    "bisleri",
+    "thums up",
+    "mountain dew",
+    "yippee",
+    "top ramen",
 ]
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  LOAD MAPS
@@ -80,25 +105,36 @@ def load_maps():
         raw = json.load(f)
 
     maps = dict(raw)
-    maps["variant_price_map"]           = {int(k): v for k, v in raw["variant_price_map"].items()}
-    maps["variant_to_product_name"]     = {int(k): v for k, v in raw["variant_to_product_name"].items()}
-    maps["variant_to_category"]         = {int(k): v for k, v in raw["variant_to_category"].items()}
-    maps["variant_reorder_point"]       = {int(k): v for k, v in raw["variant_reorder_point"].items()}
-    maps["credit_limits"]               = {int(k): v for k, v in raw["credit_limits"].items()}
-    maps["customer_join_day"]           = {int(k): v for k, v in raw["customer_join_day"].items()}
-    maps["customer_segments"]           = {int(k): v for k, v in raw["customer_segments"].items()}
-    maps["churn_days"]                  = {int(k): v for k, v in raw["churn_days"].items()}
-    maps["temp_churn"]                  = {int(k): v for k, v in raw["temp_churn"].items()}
-    maps["supplier_category_map"]       = {int(k): v for k, v in raw["supplier_category_map"].items()}
-    maps["category_to_variant_ids"]     = {k: [int(x) for x in v] for k, v in raw["category_to_variant_ids"].items()}
-    maps["product_name_to_variant_ids"] = {k: [int(x) for x in v] for k, v in raw["product_name_to_variant_ids"].items()}
-    maps["all_variant_ids"]             = [int(x) for x in raw["all_variant_ids"]]
-    maps["customer_ids"]                = [int(x) for x in raw["customer_ids"]]
-    maps["credit_customer_ids"]         = [int(x) for x in raw["credit_customer_ids"]]
-    maps["supplier_ids"]                = [int(x) for x in raw["supplier_ids"]]
+    maps["variant_price_map"] = {int(k): v for k, v in raw["variant_price_map"].items()}
+    maps["variant_to_product_name"] = {
+        int(k): v for k, v in raw["variant_to_product_name"].items()
+    }
+    maps["variant_to_category"] = {
+        int(k): v for k, v in raw["variant_to_category"].items()
+    }
+    maps["variant_reorder_point"] = {
+        int(k): v for k, v in raw["variant_reorder_point"].items()
+    }
+    maps["credit_limits"] = {int(k): v for k, v in raw["credit_limits"].items()}
+    maps["customer_join_day"] = {int(k): v for k, v in raw["customer_join_day"].items()}
+    maps["customer_segments"] = {int(k): v for k, v in raw["customer_segments"].items()}
+    maps["churn_days"] = {int(k): v for k, v in raw["churn_days"].items()}
+    maps["temp_churn"] = {int(k): v for k, v in raw["temp_churn"].items()}
+    maps["supplier_category_map"] = {
+        int(k): v for k, v in raw["supplier_category_map"].items()
+    }
+    maps["category_to_variant_ids"] = {
+        k: [int(x) for x in v] for k, v in raw["category_to_variant_ids"].items()
+    }
+    maps["product_name_to_variant_ids"] = {
+        k: [int(x) for x in v] for k, v in raw["product_name_to_variant_ids"].items()
+    }
+    maps["all_variant_ids"] = [int(x) for x in raw["all_variant_ids"]]
+    maps["customer_ids"] = [int(x) for x in raw["customer_ids"]]
+    maps["credit_customer_ids"] = [int(x) for x in raw["credit_customer_ids"]]
+    maps["supplier_ids"] = [int(x) for x in raw["supplier_ids"]]
     maps["combo_pairs"] = [
-        [[int(x) for x in pa], [int(x) for x in pb]]
-        for pa, pb in raw["combo_pairs"]
+        [[int(x) for x in pa], [int(x) for x in pb]] for pa, pb in raw["combo_pairs"]
     ]
     return maps
 
@@ -117,7 +153,7 @@ def get_day_index(conn, target_date: date) -> int:
         raise RuntimeError("No existing sales in DB. Run the 10-year seed first.")
     seed_start = datetime.strptime(row, "%Y-%m-%d").date()
     delta = (target_date - seed_start).days
-    return delta   # e.g. 3650 if seeding exactly 10 years after start
+    return delta  # e.g. 3650 if seeding exactly 10 years after start
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -129,14 +165,20 @@ def daily_tx_count(day_idx: int, current_date: datetime, rng) -> int:
 
     m, d, wd = current_date.month, current_date.day, current_date.weekday()
 
-    if wd >= 5:  base *= 1.30   # Weekend
-    if d  <= 7:  base *= 1.20   # Salary week
+    if wd >= 5:
+        base *= 1.30  # Weekend
+    if d <= 7:
+        base *= 1.20  # Salary week
 
     # Festival boosts
-    if (m == 10 and d >= 15) or (m == 11 and d <= 15): base *= 1.45  # Diwali
-    elif m == 3  and  5 <= d <= 25: base *= 1.30   # Holi
-    elif m == 1  and  d <= 10:      base *= 1.25   # New Year
-    elif m in [6,7] and 10 <= d <= 25: base *= 1.20  # Eid
+    if (m == 10 and d >= 15) or (m == 11 and d <= 15):
+        base *= 1.45  # Diwali
+    elif m == 3 and 5 <= d <= 25:
+        base *= 1.30  # Holi
+    elif m == 1 and d <= 10:
+        base *= 1.25  # New Year
+    elif m in [6, 7] and 10 <= d <= 25:
+        base *= 1.20  # Eid
 
     noise = float(rng.normal(0, base * 0.08))
     return max(40, min(1100, int(base + noise)))
@@ -150,7 +192,7 @@ def get_eligible_customers(maps, day_idx: int, rng) -> list:
     Returns list of customer_ids who can visit today.
     Applies join_day, permanent churn, temp churn, and visit lambda.
     """
-    SEG_LAMBDA = {"loyal":0.26,"credit":0.16,"occasional":0.07,"at_risk":0.12}
+    SEG_LAMBDA = {"loyal": 0.26, "credit": 0.16, "occasional": 0.07, "at_risk": 0.12}
 
     eligible = []
     for cid in maps["customer_ids"]:
@@ -183,18 +225,18 @@ def get_eligible_customers(maps, day_idx: int, rng) -> list:
 #  BASKET BUILDER
 # ═══════════════════════════════════════════════════════════════════════════
 def build_basket(cid: int, day_idx: int, current_date: datetime, maps, rng) -> list:
-    all_vids  = maps["all_variant_ids"]
-    cat_vids  = maps["category_to_variant_ids"]
+    all_vids = maps["all_variant_ids"]
+    cat_vids = maps["category_to_variant_ids"]
     prod_vids = maps["product_name_to_variant_ids"]
-    categories= maps["categories"]
-    basket    = []
-    m         = current_date.month
+    categories = maps["categories"]
+    basket = []
+    m = current_date.month
 
     # 1. Preferred category (1-3 items)
-    pref_cat_idx  = cid % len(categories)
-    pref_cat      = categories[pref_cat_idx]
+    pref_cat_idx = cid % len(categories)
+    pref_cat = categories[pref_cat_idx]
     secondary_cat = categories[(pref_cat_idx + 1) % len(categories)]
-    pv       = cat_vids.get(pref_cat, [])
+    pv = cat_vids.get(pref_cat, [])
     sec_vids = cat_vids.get(secondary_cat, [])
     if pv:
         for _ in range(int(rng.integers(2, 5))):
@@ -253,27 +295,35 @@ def build_basket(cid: int, day_idx: int, current_date: datetime, maps, rng) -> l
 # ═══════════════════════════════════════════════════════════════════════════
 #  PAYMENT HANDLER  — reads live balance from DB state
 # ═══════════════════════════════════════════════════════════════════════════
-def handle_payment(cid, total_bill, current_date, maps, live_balances,
-                   credit_set, rng, payments_q):
+def handle_payment(
+    cid, total_bill, current_date, maps, live_balances, credit_set, rng, payments_q
+):
     if cid not in credit_set:
         # Cash customer — full payment immediately
         dstr = current_date.strftime("%Y-%m-%d %H:%M:%S")
-        payments_q.append((cid, dstr, round(float(total_bill), 2), random.choices(PAYMENT_MODES, weights=PAYMENT_WEIGHTS, k=1)[0]))
+        payments_q.append(
+            (
+                cid,
+                dstr,
+                round(float(total_bill), 2),
+                random.choices(PAYMENT_MODES, weights=PAYMENT_WEIGHTS, k=1)[0],
+            )
+        )
         return
 
     # Add to running balance
     live_balances[cid] = live_balances.get(cid, 0.0) + total_bill
-    debt  = live_balances[cid]
+    debt = live_balances[cid]
     limit = maps["credit_limits"].get(cid, 15000.0)
     m_day = current_date.day
     is_sw = m_day <= 7
     is_fm = current_date.month in [10, 11, 1, 3]
 
     pay_amount = 0.0
-    dstr       = current_date.strftime("%Y-%m-%d %H:%M:%S")
+    dstr = current_date.strftime("%Y-%m-%d %H:%M:%S")
 
     if debt > limit:
-        excess     = debt - limit
+        excess = debt - limit
         pay_amount = min(excess + float(rng.uniform(300, 2500)), debt)
 
     elif is_sw and debt > 400:
@@ -283,23 +333,31 @@ def handle_payment(cid, total_bill, current_date, maps, live_balances,
 
     if debt > 80000:
         target_after = float(rng.uniform(10000, 25000))
-        pay_amount   = max(pay_amount, debt - target_after)
+        pay_amount = max(pay_amount, debt - target_after)
 
     if pay_amount > 0:
         pay_amount = min(round(pay_amount, 2), debt)
         live_balances[cid] -= pay_amount
-        live_balances[cid]  = max(0.0, live_balances[cid])
-        payments_q.append((cid, dstr, pay_amount, random.choices(PAYMENT_MODES, weights=PAYMENT_WEIGHTS, k=1)[0]))
+        live_balances[cid] = max(0.0, live_balances[cid])
+        payments_q.append(
+            (
+                cid,
+                dstr,
+                pay_amount,
+                random.choices(PAYMENT_MODES, weights=PAYMENT_WEIGHTS, k=1)[0],
+            )
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  SPONTANEOUS PAYMENTS  — credit customers paying without buying
 # ═══════════════════════════════════════════════════════════════════════════
-def handle_spontaneous_payments(current_date, maps, live_balances,
-                                 credit_set, rng, payments_q):
+def handle_spontaneous_payments(
+    current_date, maps, live_balances, credit_set, rng, payments_q
+):
     is_fest = current_date.month in [10, 11, 1, 3]
-    prob    = 0.14 if is_fest else 0.08
-    dbase   = current_date.strftime("%Y-%m-%d")
+    prob = 0.14 if is_fest else 0.08
+    dbase = current_date.strftime("%Y-%m-%d")
 
     sp_rand = rng.random(len(maps["credit_customer_ids"]))
     sp_frac = rng.random(len(maps["credit_customer_ids"]))
@@ -312,20 +370,28 @@ def handle_spontaneous_payments(current_date, maps, live_balances,
         if pay_amount < 1.0:
             continue
         live_balances[sp_cid] -= pay_amount
-        live_balances[sp_cid]  = max(0.0, live_balances[sp_cid])
+        live_balances[sp_cid] = max(0.0, live_balances[sp_cid])
         h = int(rng.integers(9, 18))
         mn = int(rng.integers(0, 60))
-        payments_q.append((sp_cid, f"{dbase} {h:02d}:{mn:02d}:00", pay_amount, random.choices(PAYMENT_MODES, weights=PAYMENT_WEIGHTS, k=1)[0]))
+        payments_q.append(
+            (
+                sp_cid,
+                f"{dbase} {h:02d}:{mn:02d}:00",
+                pay_amount,
+                random.choices(PAYMENT_MODES, weights=PAYMENT_WEIGHTS, k=1)[0],
+            )
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  RESTOCK → PURCHASE INVOICES
 # ═══════════════════════════════════════════════════════════════════════════
-def create_invoices(restock_map, current_date, maps, inv_counter,
-                    inv_seq, rng, invoices_q, p_items_q):
+def create_invoices(
+    restock_map, current_date, maps, inv_counter, inv_seq, rng, invoices_q, p_items_q
+):
     sup_batches = {}
     for vid, (qty, cost) in restock_map.items():
-        cat      = maps["variant_to_category"].get(vid, "")
+        cat = maps["variant_to_category"].get(vid, "")
         assigned = None
         for sid_k, cats in maps["supplier_category_map"].items():
             if cat in cats:
@@ -337,21 +403,22 @@ def create_invoices(restock_map, current_date, maps, inv_counter,
 
     for sid, items in sup_batches.items():
         inv_counter += 1
-        seq          = inv_seq.get(sid, 0) + 1
+        seq = inv_seq.get(sid, 0) + 1
         inv_seq[sid] = seq
-        ih           = int(rng.integers(4, 8))
-        idt          = current_date.replace(
-            hour=ih, minute=int(rng.integers(0, 60)), second=0
-        )
+        ih = int(rng.integers(4, 8))
+        idt = current_date.replace(hour=ih, minute=int(rng.integers(0, 60)), second=0)
         total_amt = sum(q * c for _, q, c in items)
-        ref_no    = f"INV-{idt.year}{idt.month:02d}-{sid:04d}-{seq:05d}"
+        ref_no = f"INV-{idt.year}{idt.month:02d}-{sid:04d}-{seq:05d}"
 
-        invoices_q.append((
-            inv_counter, sid,
-            idt.strftime("%Y-%m-%d %H:%M:%S"),
-            round(float(total_amt), 2),
-            ref_no
-        ))
+        invoices_q.append(
+            (
+                inv_counter,
+                sid,
+                idt.strftime("%Y-%m-%d %H:%M:%S"),
+                round(float(total_amt), 2),
+                ref_no,
+            )
+        )
         for vid, qty, cost in items:
             p_items_q.append((inv_counter, int(vid), float(qty), float(cost)))
 
@@ -362,18 +429,24 @@ def create_invoices(restock_map, current_date, maps, inv_counter,
 #  MAIN
 # ═══════════════════════════════════════════════════════════════════════════
 def main():
-    parser = argparse.ArgumentParser(description="NexusRetailOS daily transaction seeder")
-    parser.add_argument(
-        "--date", type=str, default=None,
-        help="Date to seed in YYYY-MM-DD format (default: today)"
+    parser = argparse.ArgumentParser(
+        description="NexusRetailOS daily transaction seeder"
     )
     parser.add_argument(
-        "--dry-run", action="store_true",
-        help="Simulate and print stats without writing to the database"
+        "--date",
+        type=str,
+        default=None,
+        help="Date to seed in YYYY-MM-DD format (default: today)",
     )
     parser.add_argument(
-        "--force", action="store_true",
-        help="Insert even if sales already exist for this date"
+        "--dry-run",
+        action="store_true",
+        help="Simulate and print stats without writing to the database",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Insert even if sales already exist for this date",
     )
     args = parser.parse_args()
 
@@ -411,8 +484,7 @@ def main():
     # ── Guard: already seeded today? ──────────────────────────────────────
     date_str_check = target_date.strftime("%Y-%m-%d")
     existing = c.execute(
-        "SELECT COUNT(*) FROM credit_sale WHERE DATE(sale_date) = ?",
-        (date_str_check,)
+        "SELECT COUNT(*) FROM credit_sale WHERE DATE(sale_date) = ?", (date_str_check,)
     ).fetchone()[0]
 
     if existing > 0 and not args.force:
@@ -432,7 +504,7 @@ def main():
     # ── Compute expected volume ────────────────────────────────────────────
     # Use date-seeded RNG so the same date always gives the same volume
     date_seed = int(target_date.strftime("%Y%m%d"))
-    rng       = np.random.default_rng(date_seed)
+    rng = np.random.default_rng(date_seed)
 
     target_tx = daily_tx_count(day_idx, target_dt, rng)
     print(f"   Target tx volume  : {target_tx:,}")
@@ -450,24 +522,29 @@ def main():
 
     # Max existing IDs (so we don't collide with existing PKs)
     max_sale_id = c.execute("SELECT IFNULL(MAX(id), 0) FROM credit_sale").fetchone()[0]
-    max_inv_id  = c.execute("SELECT IFNULL(MAX(id), 0) FROM purchase_invoice").fetchone()[0]
+    max_inv_id = c.execute(
+        "SELECT IFNULL(MAX(id), 0) FROM purchase_invoice"
+    ).fetchone()[0]
     sale_counter = max_sale_id
-    inv_counter  = max_inv_id
+    inv_counter = max_inv_id
 
     # Current invoice sequences per supplier
-    rows = c.execute("""
+    rows = c.execute(
+        """
         SELECT supplier_id, COUNT(*)
         FROM purchase_invoice
         WHERE DATE(invoice_date) = ?
         GROUP BY supplier_id
-    """, (date_str_check,)).fetchall()
+    """,
+        (date_str_check,),
+    ).fetchall()
     inv_seq = {r[0]: r[1] for r in rows}
 
     print("✅")
 
     # ── Get eligible buyers ────────────────────────────────────────────────
     credit_set = set(maps["credit_customer_ids"])
-    buyers     = get_eligible_customers(maps, day_idx, rng)
+    buyers = get_eligible_customers(maps, day_idx, rng)
 
     # Cap / supplement to hit target
     if len(buyers) > target_tx:
@@ -475,14 +552,17 @@ def main():
     elif len(buyers) < int(target_tx * 0.7):
         # Pull in extra random eligible customers to approach target
         all_eligible = [
-            cid for cid in maps["customer_ids"]
+            cid
+            for cid in maps["customer_ids"]
             if day_idx >= maps["customer_join_day"].get(cid, 0)
             and day_idx <= maps["churn_days"].get(cid, 9999)
         ]
         non_buyers = [c for c in all_eligible if c not in set(buyers)]
-        shortfall  = min(int(target_tx * 0.7) - len(buyers), len(non_buyers))
+        shortfall = min(int(target_tx * 0.7) - len(buyers), len(non_buyers))
         if shortfall > 0:
-            buyers += [int(x) for x in rng.choice(non_buyers, size=shortfall, replace=False)]
+            buyers += [
+                int(x) for x in rng.choice(non_buyers, size=shortfall, replace=False)
+            ]
 
     # Guarantee all buyer IDs are plain Python int — never numpy int64
     # (numpy int64 inserted into SQLite becomes BLOB, breaking pandas groupby in churn model)
@@ -491,16 +571,16 @@ def main():
     print(f"   Eligible buyers   : {len(buyers):,}")
 
     # ── Simulate ──────────────────────────────────────────────────────────
-    sales_q    = []
-    items_q    = []
+    sales_q = []
+    items_q = []
     payments_q = []
     invoices_q = []
-    p_items_q  = []
+    p_items_q = []
     restock_map = {}
 
-    hours   = rng.integers(8,  21, len(buyers))
-    minutes = rng.integers(0,  60, len(buyers))
-    seconds = rng.integers(0,  60, len(buyers))
+    hours = rng.integers(8, 21, len(buyers))
+    minutes = rng.integers(0, 60, len(buyers))
+    seconds = rng.integers(0, 60, len(buyers))
 
     total_revenue = 0.0
 
@@ -508,18 +588,18 @@ def main():
         sale_counter += 1
         sale_id = sale_counter
 
-        sale_dt   = target_dt.replace(
+        sale_dt = target_dt.replace(
             hour=int(hours[bi]), minute=int(minutes[bi]), second=int(seconds[bi])
         )
         sale_dstr = sale_dt.strftime("%Y-%m-%d %H:%M:%S")
         sales_q.append((sale_id, cid, sale_dstr))
 
-        basket     = build_basket(cid, day_idx, target_dt, maps, rng)
+        basket = build_basket(cid, day_idx, target_dt, maps, rng)
         total_bill = 0.0
 
         for vid in basket:
-            qty    = float(rng.integers(1, 5))
-            price  = round(float(maps["variant_price_map"].get(vid, 20.0)), 2)
+            qty = float(rng.integers(1, 5))
+            price = round(float(maps["variant_price_map"].get(vid, 20.0)), 2)
             total_bill += qty * price
             items_q.append((sale_id, vid, qty, price))
 
@@ -535,8 +615,7 @@ def main():
 
         total_revenue += total_bill
         handle_payment(
-            cid, total_bill, sale_dt, maps,
-            live_balances, credit_set, rng, payments_q
+            cid, total_bill, sale_dt, maps, live_balances, credit_set, rng, payments_q
         )
 
     # Spontaneous debt payments
@@ -551,22 +630,29 @@ def main():
             debt = live_balances.get(ye_cid, 0.0)
             if debt > 15000:
                 frac = float(ye_rand[yi] * 0.32 + 0.60)
-                pa   = round(debt * frac, 2)
+                pa = round(debt * frac, 2)
                 live_balances[ye_cid] -= pa
-                live_balances[ye_cid]  = max(0.0, live_balances[ye_cid])
-                payments_q.append((
-                    ye_cid,
-                    target_date.strftime("%Y-%m-%d 23:59:00"),
-                    pa,
-                    random.choices(PAYMENT_MODES, weights=PAYMENT_WEIGHTS, k=1)[0]
-                ))
+                live_balances[ye_cid] = max(0.0, live_balances[ye_cid])
+                payments_q.append(
+                    (
+                        ye_cid,
+                        target_date.strftime("%Y-%m-%d 23:59:00"),
+                        pa,
+                        random.choices(PAYMENT_MODES, weights=PAYMENT_WEIGHTS, k=1)[0],
+                    )
+                )
 
     # Create invoices from restocks
     if restock_map:
         inv_counter = create_invoices(
-            restock_map, target_dt, maps,
-            inv_counter, inv_seq, rng,
-            invoices_q, p_items_q
+            restock_map,
+            target_dt,
+            maps,
+            inv_counter,
+            inv_seq,
+            rng,
+            invoices_q,
+            p_items_q,
         )
 
     # ── Stats preview ──────────────────────────────────────────────────────
@@ -593,33 +679,32 @@ def main():
     if sales_q:
         c.executemany(
             "INSERT INTO credit_sale (id, customer_id, sale_date) VALUES (?,?,?)",
-            sales_q
+            sales_q,
         )
         c.executemany(
             "INSERT INTO credit_sale_item (sale_id, variant_id, quantity, price_at_sale) VALUES (?,?,?,?)",
-            items_q
+            items_q,
         )
     if payments_q:
         c.executemany(
             "INSERT INTO payment (customer_id, payment_date, amount, payment_mode) VALUES (?,?,?,?)",
-            payments_q
+            payments_q,
         )
     if invoices_q:
         c.executemany(
             "INSERT INTO purchase_invoice (id, supplier_id, invoice_date, total_amount, reference_number) VALUES (?,?,?,?,?)",
-            invoices_q
+            invoices_q,
         )
         c.executemany(
             "INSERT INTO purchase_item (invoice_id, variant_id, quantity, unit_cost) VALUES (?,?,?,?)",
-            p_items_q
+            p_items_q,
         )
 
     # ── Bulk-update live balances (mirrors trigger behaviour) ──────────────
     # Only update customers whose balance changed today
     changed_cids = set(r[0] for r in payments_q) | set(r[0] for r in sales_q)
     balance_updates = [
-        (round(max(0.0, live_balances.get(cid, 0.0)), 2), cid)
-        for cid in changed_cids
+        (round(max(0.0, live_balances.get(cid, 0.0)), 2), cid) for cid in changed_cids
     ]
     if balance_updates:
         c.executemany("UPDATE customer SET balance = ? WHERE id = ?", balance_updates)
@@ -631,8 +716,7 @@ def main():
             for vid in restock_map
         ]
         c.executemany(
-            "UPDATE product_variant SET current_stock = ? WHERE id = ?",
-            stock_updates
+            "UPDATE product_variant SET current_stock = ? WHERE id = ?", stock_updates
         )
 
     conn.commit()
@@ -643,7 +727,9 @@ def main():
     print("✅")
     print(f"\n{'=' * 60}")
     print(f"  ✅  Daily seed complete for {date_str_check}  ({elapsed:.1f}s)")
-    print(f"      {len(sales_q):,} sales  ·  {len(items_q):,} items  ·  ₹{total_revenue:,.0f} revenue")
+    print(
+        f"      {len(sales_q):,} sales  ·  {len(items_q):,} items  ·  ₹{total_revenue:,.0f} revenue"
+    )
     print(f"{'=' * 60}\n")
 
 

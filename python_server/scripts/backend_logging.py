@@ -5,6 +5,7 @@ import traceback
 
 def get_logger(name):
     import sys
+
     # Determine log path
     if "NEXUS_USER_DATA" in os.environ:
         _base = os.environ["NEXUS_USER_DATA"]
@@ -12,7 +13,7 @@ def get_logger(name):
         _base = os.path.join(os.getenv("APPDATA"), "NexusRetailOS")
     else:
         _base = os.path.join(os.path.expanduser("~"), ".config", "NexusRetailOS")
-        
+
     log_dir = os.path.join(_base, "logs")
 
     if not os.path.exists(log_dir):

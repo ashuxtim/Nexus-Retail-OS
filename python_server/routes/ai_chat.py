@@ -64,8 +64,6 @@ async def _safe_agent_invoke(prompt: str):
 
             messages = result.get("messages", [])
 
-
-
             final_msg = messages[-1] if messages else None
             if final_msg and hasattr(final_msg, "content") and final_msg.content:
                 return {"answer": str(final_msg.content)}

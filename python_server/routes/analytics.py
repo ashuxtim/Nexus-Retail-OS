@@ -107,6 +107,7 @@ async def force_refresh_analytics():
         # Step 3 — Delete all ml_store files except chroma (same as force_refresh_all)
         try:
             import shutil
+
             ml_store_path = os.path.join(state.BASE_DIR, "ml_store")
             if os.path.exists(ml_store_path):
                 for item in os.listdir(ml_store_path):
@@ -124,12 +125,13 @@ async def force_refresh_analytics():
 
         # Step 4 — Start fresh pipeline in background thread
         import threading
+
         threading.Thread(target=run_analytics_pipeline, daemon=True).start()
         logger.info("🚀 Force refresh pipeline started in background.")
 
         return {
             "status": "refresh_started",
-            "message": "Full reset initiated. All 4 models recomputing in background."
+            "message": "Full reset initiated. All 4 models recomputing in background.",
         }
 
     except Exception as e:
@@ -267,19 +269,20 @@ async def cleanup_expired_cache():
 @router.get("/health")
 async def health_check():
     from core import state
+
     search_status = "offline"
-    if hasattr(state, 'search_engine') and state.search_engine:
+    if hasattr(state, "search_engine") and state.search_engine:
         if state.search_engine.is_loading:
             search_status = "warming_up"
         elif state.search_engine.load_error:
             search_status = "error"
         elif not state.search_engine.is_ready:
             search_status = "offline"
-            
+
     return {
         "status": "Active" if state.safety_guard else "Missing Keys",
         "search_engine": search_status,
-        "ai_failed": state.AI_INIT_FAILED
+        "ai_failed": state.AI_INIT_FAILED,
     }
 
 

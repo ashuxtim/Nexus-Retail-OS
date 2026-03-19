@@ -29,7 +29,4 @@ AI_INIT_FAILED = False
 # Thread-safe lock for ANALYTICS_CACHE mutations
 _cache_lock = threading.Lock()
 
-ANALYTICS_CACHE = {
-    "status": "processing",
-    "data": {}
-}
+ANALYTICS_CACHE = {"status": "processing", "data": {}}

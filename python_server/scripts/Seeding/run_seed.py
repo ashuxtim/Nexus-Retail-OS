@@ -41,6 +41,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
+
 # ─── Dependency check ────────────────────────────────────────────────────
 def check_deps():
     missing = []
@@ -53,6 +54,7 @@ def check_deps():
         print("❌  Missing Python packages. Install with:")
         print(f"       pip install {' '.join(missing)}")
         sys.exit(1)
+
 
 # ─── Import steps ────────────────────────────────────────────────────────
 def import_steps():
@@ -105,7 +107,9 @@ def main():
         gm.main()
     except Exception as e:
         print(f"\n❌  STEP 1 FAILED: {e}")
-        import traceback; traceback.print_exc()
+        import traceback
+
+        traceback.print_exc()
         sys.exit(1)
     print(f"  ⏱  Step 1 finished in {time.time()-t1:.1f}s\n")
 
@@ -118,7 +122,9 @@ def main():
         gt.main()
     except Exception as e:
         print(f"\n❌  STEP 2 FAILED: {e}")
-        import traceback; traceback.print_exc()
+        import traceback
+
+        traceback.print_exc()
         sys.exit(1)
     print(f"  ⏱  Step 2 finished in {(time.time()-t2)/60:.1f} min\n")
 
@@ -136,7 +142,9 @@ def main():
         # Don't re-raise; we still want the final summary
     except Exception as e:
         print(f"\n❌  STEP 3 FAILED: {e}")
-        import traceback; traceback.print_exc()
+        import traceback
+
+        traceback.print_exc()
     print(f"  ⏱  Step 3 finished in {time.time()-t3:.1f}s\n")
 
     # ── All done ──────────────────────────────────────────────────────────
