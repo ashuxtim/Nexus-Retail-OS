@@ -88,7 +88,7 @@ jobs:
     - name: 2. Run Daily Simulation (The Delta)
       # Runs the daily update on top of that temp database
       run: |
-        python python_server/scripts/daily_seed.py
+        python python_server/scripts/Seeding/daily_seed.py
       env:
         # Must match the APPDATA above so it finds the same DB file
         APPDATA: ${{ runner.temp }}
