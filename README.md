@@ -55,17 +55,17 @@ Nexus Retail OS is what an ML engineer would actually build for that problem. Al
 
 ## 🎬 Project showcase
 
-### Executive dashboard & AI assistant
+### Executive dashboard
 
-<!-- VIDEO 1: Drag and drop dashboard recording here via GitHub web editor -->
+https://github.com/user-attachments/assets/f22f630e-6169-4404-a1b9-a7587fc5662f
 
 The dashboard runs in two modes. **Overview** shows a 30-day Prophet revenue forecast with 95% confidence bands alongside a live debt/stock panel. **AI Intelligence** surfaces all four ML model outputs — churn scores, stockout probabilities, market basket rules — each on its own TTL schedule, loaded instantly from an analytics snapshot table on startup.
 
 ### OCR receipt processing
 
-<!-- VIDEO 2: Drag and drop OCR receipt recording here via GitHub web editor -->
+https://github.com/user-attachments/assets/9954378b-6846-4a53-a921-1f02b04acd31
 
-Upload a receipt image → Llama 4 Maverick extracts structured JSON in ~2 seconds → entity resolution matches supplier and products against live DB tables → one-click purchase invoice with automatic stock reconciliation.
+Upload a receipt image → Llama 4 Scout extracts structured JSON in ~2 seconds → entity resolution matches supplier and products against live DB tables → one-click purchase invoice with automatic stock reconciliation.
 
 ---
 
