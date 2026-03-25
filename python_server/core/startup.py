@@ -198,7 +198,8 @@ def run_analytics_pipeline():
     logger.info("Running background analytics pipeline...")
     with state._cache_lock:
         state.ANALYTICS_CACHE["status"] = "processing"
-        state.ANALYTICS_CACHE["data"] = {}
+        if "data" not in state.ANALYTICS_CACHE:
+            state.ANALYTICS_CACHE["data"] = {}
 
     try:
         state.analytics_engine._check_and_expire_cache(
