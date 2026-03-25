@@ -243,23 +243,6 @@ function startBackend() {
 
 
     // --- LISTEN FOR SIGNALS (Production Only) ---
-    if (backendProcess.stdout) {
-      backendProcess.stdout.on('data', (data) => {
-        const str = data.toString().trim();
-
-        // Debug Log (Optional - helpful to see if Uvicorn starts)
-        // console.log(`[Python]: ${str}`);
-
-        // THE MAGIC SIGNAL TRIGGER
-        if (str.includes('>>ANALYTICS_READY<<')) {
-          console.log("⚡ Analytics Finished. Refreshing UI...");
-          if (mainWindow) {
-            mainWindow.webContents.send('analytics:ready');
-          }
-        }
-      });
-    }
-
     if (backendProcess.stderr) {
       backendProcess.stderr.on('data', (data) => console.error(`[Python Error]: ${data}`));
     }

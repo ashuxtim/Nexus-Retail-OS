@@ -7,6 +7,7 @@ import json
 import threading
 import asyncio
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from sqlalchemy import text, create_engine, event
 
@@ -210,14 +211,14 @@ def run_analytics_pipeline():
             state.analytics_engine.basket_ai._get_cache_path(), valid_hours=720
         )
 
-        try:
-            stockout_raw = state.analytics_engine.stockout_ai.predict_stockouts(
-                limit=20
-            )
-            formatted_stockouts = []
-            for item in stockout_raw:
-                formatted_stockouts.append(
-                    {
+        # --- Define each model as an isolated callable ---
+
+        def run_stockout():
+            try:
+                stockout_raw = state.analytics_engine.stockout_ai.predict_stockouts(limit=20)
+                formatted_stockouts = []
+                for item in stockout_raw:
+                    formatted_stockouts.append({
                         "name": item.get("product_name", f"Item {item['variant_id']}"),
                         "variant_id": item["variant_id"],
                         "stock": item["current_stock"],
@@ -225,26 +226,25 @@ def run_analytics_pipeline():
                         "status": item["risk_level"].title(),
                         "metrics": item["metrics"],
                         "recommendation": item["recommendation"],
-                    }
-                )
-            with state._cache_lock:
-                state.ANALYTICS_CACHE["data"]["stockouts"] = formatted_stockouts
-            logger.info("✅ Stockout model complete.")
-            _save_snapshot_to_db("stockouts", formatted_stockouts)
-        except Exception as e:
-            logger.error(f"Stockout model failed: {e}")
-            with state._cache_lock:
-                state.ANALYTICS_CACHE["data"]["stockouts"] = []
+                    })
+                with state._cache_lock:
+                    state.ANALYTICS_CACHE["data"]["stockouts"] = formatted_stockouts
+                logger.info("✅ Stockout model complete.")
+                _save_snapshot_to_db("stockouts", formatted_stockouts)
+            except Exception as e:
+                logger.error(f"Stockout model failed: {e}")
+                with state._cache_lock:
+                    state.ANALYTICS_CACHE["data"]["stockouts"] = []
 
-        try:
-            churn_raw = state.analytics_engine.churn_ai.get_cached_predictions()
-            if not churn_raw:
-                churn_raw = state.analytics_engine.churn_ai.predict_all_customers()
-            formatted_churn = []
-            if churn_raw:
-                for p in churn_raw:
-                    formatted_churn.append(
-                        {
+        def run_churn():
+            try:
+                churn_raw = state.analytics_engine.churn_ai.get_cached_predictions()
+                if not churn_raw:
+                    churn_raw = state.analytics_engine.churn_ai.predict_all_customers()
+                formatted_churn = []
+                if churn_raw:
+                    for p in churn_raw:
+                        formatted_churn.append({
                             "customer_id": p.get("customer_id"),
                             "name": p.get("customer_name", "Unknown"),
                             "risk_score": int(p.get("churn_score", 0) * 100),
@@ -252,77 +252,86 @@ def run_analytics_pipeline():
                             "velocity": p.get("features", {}).get("velocity", 0),
                             "trend": p.get("risk_label", "Unknown"),
                             "balance": p.get("balance", 0),
-                        }
-                    )
-            with state._cache_lock:
-                state.ANALYTICS_CACHE["data"]["churn_risk"] = formatted_churn[:50]
-                state.ANALYTICS_CACHE["data"][
-                    "churn_risk_model_info"
-                ] = state.analytics_engine.churn_ai.get_model_info()
-            logger.info("✅ Churn model complete.")
-            _save_snapshot_to_db(
-                "churn",
-                {
+                        })
+                with state._cache_lock:
+                    state.ANALYTICS_CACHE["data"]["churn_risk"] = formatted_churn[:50]
+                    state.ANALYTICS_CACHE["data"]["churn_risk_model_info"] = state.analytics_engine.churn_ai.get_model_info()
+                logger.info("✅ Churn model complete.")
+                _save_snapshot_to_db("churn", {
                     "churn_risk": formatted_churn[:50],
                     "churn_risk_model_info": state.analytics_engine.churn_ai.get_model_info(),
-                },
-            )
-        except Exception as e:
-            logger.error(f"Churn model failed: {e}")
-            with state._cache_lock:
-                state.ANALYTICS_CACHE["data"]["churn_risk"] = []
-                state.ANALYTICS_CACHE["data"]["churn_risk_model_info"] = {}
+                })
+            except Exception as e:
+                logger.error(f"Churn model failed: {e}")
+                with state._cache_lock:
+                    state.ANALYTICS_CACHE["data"]["churn_risk"] = []
+                    state.ANALYTICS_CACHE["data"]["churn_risk_model_info"] = {}
 
-        try:
-            forecast_data = state.analytics_engine.forecast_ai.get_cached_forecast()
-            if not forecast_data:
-                forecast_data = state.analytics_engine.forecast_ai.generate_forecast(
-                    days_ahead=30
-                )
-            with state._cache_lock:
-                state.ANALYTICS_CACHE["data"]["forecast"] = forecast_data
-            logger.info("✅ Forecast model complete.")
-            _save_snapshot_to_db("forecast", forecast_data)
-        except Exception as e:
-            logger.error(f"Forecast model failed: {e}")
-            with state._cache_lock:
-                state.ANALYTICS_CACHE["data"]["forecast"] = None
+        def run_forecast():
+            try:
+                forecast_data = state.analytics_engine.forecast_ai.get_cached_forecast()
+                if not forecast_data:
+                    forecast_data = state.analytics_engine.forecast_ai.generate_forecast(days_ahead=30)
+                with state._cache_lock:
+                    state.ANALYTICS_CACHE["data"]["forecast"] = forecast_data
+                logger.info("✅ Forecast model complete.")
+                _save_snapshot_to_db("forecast", forecast_data)
+            except Exception as e:
+                logger.error(f"Forecast model failed: {e}")
+                with state._cache_lock:
+                    state.ANALYTICS_CACHE["data"]["forecast"] = None
 
-        try:
-            basket_rules = state.analytics_engine.basket_ai.get_cached_rules()
-            if basket_rules is None:
-                if state.analytics_engine._basket_lock.acquire(blocking=False):
-                    try:
-                        basket_rules = state.analytics_engine.basket_ai.generate_rules()
-                    finally:
-                        state.analytics_engine._basket_lock.release()
-                else:
-                    basket_rules = []
-            basket_metadata = None
-            if basket_rules:
-                basket_metadata = {"algorithm": "FP-Growth", "count": len(basket_rules)}
-            with state._cache_lock:
-                state.ANALYTICS_CACHE["data"]["market_basket"] = {
+        def run_market_basket():
+            try:
+                basket_rules = state.analytics_engine.basket_ai.get_cached_rules()
+                if basket_rules is None:
+                    if state.analytics_engine._basket_lock.acquire(blocking=False):
+                        try:
+                            basket_rules = state.analytics_engine.basket_ai.generate_rules()
+                        finally:
+                            state.analytics_engine._basket_lock.release()
+                    else:
+                        basket_rules = []
+                basket_metadata = None
+                if basket_rules:
+                    basket_metadata = {"algorithm": "FP-Growth", "count": len(basket_rules)}
+                with state._cache_lock:
+                    state.ANALYTICS_CACHE["data"]["market_basket"] = {
+                        "rules": basket_rules or [],
+                        "model_metadata": basket_metadata,
+                    }
+                logger.info("✅ Market Basket model complete.")
+                _save_snapshot_to_db("market_basket", {
                     "rules": basket_rules or [],
                     "model_metadata": basket_metadata,
-                }
-            logger.info("✅ Market Basket model complete.")
-            _save_snapshot_to_db(
-                "market_basket",
-                {"rules": basket_rules or [], "model_metadata": basket_metadata},
-            )
-        except Exception as e:
-            logger.error(f"Market Basket model failed: {e}")
-            with state._cache_lock:
-                state.ANALYTICS_CACHE["data"]["market_basket"] = {
-                    "rules": [],
-                    "model_metadata": None,
-                }
+                })
+            except Exception as e:
+                logger.error(f"Market Basket model failed: {e}")
+                with state._cache_lock:
+                    state.ANALYTICS_CACHE["data"]["market_basket"] = {
+                        "rules": [],
+                        "model_metadata": None,
+                    }
 
+        # --- Run all 4 models in parallel ---
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = {
+                executor.submit(run_stockout): "Stockout",
+                executor.submit(run_churn): "Churn",
+                executor.submit(run_forecast): "Forecast",
+                executor.submit(run_market_basket): "Market Basket",
+            }
+            for future in as_completed(futures):
+                model_name = futures[future]
+                try:
+                    future.result()
+                except Exception as e:
+                    logger.error(f"{model_name} thread raised unhandled exception: {e}")
+
+        # FINAL RESOLUTION
         with state._cache_lock:
             state.ANALYTICS_CACHE["status"] = "ready"
         logger.info("✅ Analytics pipeline complete.")
-        print("AI pipeline ready. >>ANALYTICS_READY<<", flush=True)
 
     except Exception as e:
         logger.error(f"Analytics pipeline failed: {e}")

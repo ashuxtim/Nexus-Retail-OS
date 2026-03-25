@@ -395,19 +395,12 @@ export default function DashboardPage() {
     fetchAnalyticsRef.current = fetchAnalytics;
 
 
-    const onAnalyticsReady = () => {
-      fetchAnalytics();
-    };
-    
     fetchQuickStats();
     fetchAnalytics();
-    
-    if (window.api?.on) window.api.on("analytics:ready", onAnalyticsReady);
     
     return () => {
       isMounted = false;
       if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
-      if (window.api?.off) window.api.off("analytics:ready", onAnalyticsReady);
     };
   }, [processForecast]);
 
