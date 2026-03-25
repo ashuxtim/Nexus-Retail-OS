@@ -80,4 +80,5 @@ initialize_ai()
 if __name__ == "__main__":
     # This prevents Prophet/Torch from spawning infinite copies of the app.
     multiprocessing.freeze_support()
-    uvicorn.run(app, host="127.0.0.1", port=8000, log_config=None, use_colors=False)
+    port = int(os.environ.get("NEXUS_API_PORT", 8000))
+    uvicorn.run(app, host="127.0.0.1", port=port, log_config=None, use_colors=False)

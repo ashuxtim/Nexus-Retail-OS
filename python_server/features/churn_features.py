@@ -127,6 +127,17 @@ class ChurnFeatureEngineer:
         # Features at T-90
         X_train = self.calculate_rfm(train_anchor, lookback_days=365)
 
+        # --- Data Sufficiency Guard ---
+        # Fresh installs with <12 months of data may not have enough rows
+        # for a reliable XGBoost model. Retry with shorter lookback first.
+        if len(X_train) < 100:
+            X_train = self.calculate_rfm(train_anchor, lookback_days=180)
+
+        # Hard floor: <50 rows risks overfitting past AUC threshold.
+        # Let HeuristicChurnModel handle predictions instead.
+        if len(X_train) < 50:
+            return pd.DataFrame(), pd.Series()
+
         if X_train.empty:
             return pd.DataFrame(), pd.Series()
 
@@ -148,7 +159,7 @@ class ChurnFeatureEngineer:
                 query,
                 conn,
                 params={
-                    "start": train_anchor.strftime("%Y-%m-%d"),
+                    "start": (train_anchor + timedelta(days=1)).strftime("%Y-%m-%d"),
                     "end": now.strftime("%Y-%m-%d"),
                 },
             )

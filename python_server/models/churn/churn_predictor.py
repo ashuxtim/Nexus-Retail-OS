@@ -132,7 +132,7 @@ class ChurnPredictor:
 
             # 2. Train XGBoost model
             model = XGBoostChurnModel(
-                config={"max_depth": 6, "learning_rate": 0.1, "n_estimators": 100}
+                config={"max_depth": 4, "learning_rate": 0.1, "n_estimators": 100}
             )
 
             model.train(X_train, y_train)
@@ -183,13 +183,24 @@ class ChurnPredictor:
                 trained_rows=len(X_train),
             )
 
-            # 6. Promote to active if it meets quality threshold
+            # 6. Champion vs Challenger — only promote if better than current champion
             auc = metrics.get("auc_roc", 0)
-            if auc >= 0.85:
-                self.model_manager.promote_model(model_id)
-                print(f"   🚀 Model promoted to active (AUC: {auc:.3f})")
+            current_champion = self.model_manager.get_active_model("churn")
+
+            if current_champion:
+                champion_auc = current_champion.get("metrics", {}).get("auc_roc", 0)
+                if auc > champion_auc + 0.01:
+                    self.model_manager.promote_model(model_id)
+                    print(f"   🏆 New champion! AUC {auc:.3f} beats old champion {champion_auc:.3f}")
+                else:
+                    print(f"   ⚠️  Challenger AUC {auc:.3f} did not beat champion {champion_auc:.3f} (+0.01 margin). Keeping current champion.")
             else:
-                print(f"   ⚠️  Model trained but not promoted (AUC: {auc:.3f} < 0.85)")
+                # No champion yet (first install) — promote if meets baseline threshold
+                if auc >= 0.85:
+                    self.model_manager.promote_model(model_id)
+                    print(f"   🚀 First model promoted to active (AUC: {auc:.3f})")
+                else:
+                    print(f"   ⚠️  Model trained but not promoted — AUC {auc:.3f} < 0.85 minimum threshold")
 
             return True
 

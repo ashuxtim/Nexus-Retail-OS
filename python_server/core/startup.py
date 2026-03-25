@@ -322,7 +322,7 @@ def run_analytics_pipeline():
         with state._cache_lock:
             state.ANALYTICS_CACHE["status"] = "ready"
         logger.info("✅ Analytics pipeline complete.")
-        print("AI pipeline ready", flush=True)
+        print("AI pipeline ready. >>ANALYTICS_READY<<", flush=True)
 
     except Exception as e:
         logger.error(f"Analytics pipeline failed: {e}")

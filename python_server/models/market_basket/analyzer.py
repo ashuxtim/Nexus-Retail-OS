@@ -81,7 +81,7 @@ class MarketBasketAnalyzer:
             print(f"❌ Failed to save MBA cache: {e}")
 
     def generate_rules(
-        self, min_support=0.0002, min_confidence=0.05, min_lift=1.5
+        self, min_support=0.001, min_confidence=0.1, min_lift=1.5
     ) -> List[Dict]:
         """
         Main pipeline: Fetch Data -> FP-Growth -> Rules -> Cache.

@@ -61,7 +61,8 @@
     "build": "vite build",
     "test": "echo 'Test script pending migration'",
     "electron-dev": "concurrently \"npm start\" \"wait-on http://localhost:3000 && electron .\"",
-    "electron-pack": "npm run build && electron-builder"
+    "electron-pack": "npm run build && electron-builder",
+    "postinstall": "electron-rebuild -f -w better-sqlite3"
   },
   "eslintConfig": {
     "extends": [

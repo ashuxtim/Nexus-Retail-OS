@@ -49,19 +49,11 @@ class ModelManager:
             success: bool
         """
         try:
-            # Atomic transaction: deactivate + insert in a single commit
+            # Insert new model as INACTIVE — champion deactivation happens ONLY
+            # inside promote_model() after a quality check passes.
+            # This prevents the champion from being killed before we know if
+            # the challenger is good enough to replace it.
             with self.engine.begin() as conn:
-                # Deactivate previous active models for this task
-                conn.execute(
-                    text("""
-                    UPDATE model_registry 
-                    SET is_active = 0, replaced_by = :new_model_id
-                    WHERE task_type = :task_type AND is_active = 1
-                """),
-                    {"new_model_id": model_id, "task_type": task_type},
-                )
-
-                # Insert new model
                 conn.execute(
                     text("""
                     INSERT INTO model_registry (
@@ -73,7 +65,7 @@ class ModelManager:
                         :model_id, :task_type, :algorithm, :version,
                         :trained_at, :trained_rows, :data_window_months,
                         :file_path, :metrics_json,
-                        :is_active, :evaluation_status, :promoted_at
+                        0, 'pending', NULL
                     )
                 """),
                     {
@@ -86,9 +78,6 @@ class ModelManager:
                         "data_window_months": data_window_months,
                         "file_path": file_path,
                         "metrics_json": json.dumps(metrics),
-                        "is_active": 1 if is_active else 0,
-                        "evaluation_status": "approved" if is_active else "pending",
-                        "promoted_at": tz_now().isoformat() if is_active else None,
                     },
                 )
 

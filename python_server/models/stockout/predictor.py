@@ -33,7 +33,7 @@ class StockoutPredictor:
         Args:
             db_engine: SQLAlchemy database engine
             config: Configuration dict with keys:
-                - n_simulations: Monte Carlo iterations (default 10000)
+                - n_simulations: Monte Carlo iterations (default 1000)
                 - forecast_days: Prediction horizon (default 30)
                 - use_cache: Enable file-based caching (default True)
                 - cache_ttl_hours: Cache time-to-live in hours (default 4)
@@ -181,7 +181,7 @@ class StockoutPredictor:
         progress_interval = max(1, total // 4)  # Log every 25%
 
         logger.info(
-            f"Stockout simulation started: {total} products, {self.config.get('n_simulations', 10000)} iterations each"
+            f"Stockout simulation started: {total} products, {self.config.get('n_simulations', 1000)} iterations each"
         )
 
         for idx, (_, product) in enumerate(products.iterrows(), 1):

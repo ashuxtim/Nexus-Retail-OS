@@ -344,11 +344,35 @@ function createWindow() {
   });
 }
 
+function getAvailablePort() {
+  return new Promise((resolve, reject) => {
+    const server = require('net').createServer();
+    server.unref();
+    server.on('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const port = server.address().port;
+      server.close(() => resolve(port));
+    });
+  });
+}
+
 // Inside app.whenReady()
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   try {
     // 0. INIT ENCRYPTION KEY (must happen before any DB reads)
     initEncryptionKey();
+
+    // +++ NEW: DYNAMIC PORT ASSIGNMENT +++
+    try {
+      if (!config.isDev) {
+        const port = await getAvailablePort();
+        process.env.NEXUS_API_PORT = port.toString();
+        config.backendUrl = `http://127.0.0.1:${port}`;
+        console.log(`🔌 Dynamic Port Allocated: ${port}`);
+      }
+    } catch (err) {
+      console.error("Failed to bind dynamic port, falling back to 8000", err);
+    }
 
     // 1. RUN MIGRATIONS (Native JS)
     // This is synchronous. If it fails, it throws an error.

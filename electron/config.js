@@ -5,8 +5,8 @@ const isDev = !app.isPackaged;
 
 const config = {
   isDev,
-  // Backend URL: Centralized here. Change once, update everywhere.
-  backendUrl: isDev ? 'http://127.0.0.1:8000' : 'http://127.0.0.1:8000',
+  // Backend URL: Default port 8000 (dynamically overwritten by main.js in production)
+  backendUrl: 'http://127.0.0.1:8000',
   
   // Python Backend Filename (for spawning)
   backendBinary: 'NexusBackend.exe',

@@ -113,10 +113,19 @@ class MonteCarloSimulator:
         self,
         demand_stats: Dict,
         lead_time_range: Tuple[int, int],
-        holding_cost_per_unit: float = 1.0,
-        ordering_cost: float = 50.0,
+        holding_cost_per_unit: float = 20.0,
+        ordering_cost: float = 200.0,
     ) -> int:
-        """Calculate EOQ (Economic Order Quantity)."""
+        """
+        Calculate EOQ (Economic Order Quantity).
+
+        Default costs are calibrated for Indian retail:
+            holding_cost_per_unit: ₹20/unit/year (realistic proxy; caller should
+                override with price * 0.20 / 365 * 365 = price * 0.20 if unit
+                price is available).
+            ordering_cost: ₹200 per order — realistic for a small Indian retailer
+                (transport, paperwork, time cost per purchase order).
+        """
         annual_demand = demand_stats.get("daily_demand_mean", 0) * 365
         if annual_demand == 0:
             return 0
