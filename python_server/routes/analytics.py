@@ -94,15 +94,16 @@ async def force_refresh_analytics():
             state.ANALYTICS_CACHE["status"] = "processing"
             state.ANALYTICS_CACHE["data"] = {}
 
-        # Step 2 — Clear analytics_snapshot table so stale data is not served on next startup
+        # Step 2 — Clear analytics_snapshot table and deactivate all model registry rows
         try:
             conn = sqlite3.connect(state.DB_PATH)
             conn.execute("DELETE FROM analytics_snapshot")
+            conn.execute("UPDATE model_registry SET is_active = 0")
             conn.commit()
             conn.close()
-            logger.info("🗑️ analytics_snapshot table cleared for force refresh.")
+            logger.info("🗑️ analytics_snapshot and model_registry cleared for force refresh.")
         except Exception as e:
-            logger.error(f"Failed to clear analytics_snapshot: {e}")
+            logger.error(f"Failed to clear analytics_snapshot/model_registry: {e}")
 
         # Step 3 — Delete all ml_store files except chroma (same as force_refresh_all)
         try:
