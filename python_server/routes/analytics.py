@@ -225,7 +225,17 @@ async def get_cache_stats():
             db_engine=state.raw_engine,
             config={"use_cache": True, "n_simulations": 10000},
         )
-        return {"success": True, "cache_stats": predictor.cache.get_stats()}
+        cache_dir = predictor.cache_dir
+        files = list(cache_dir.glob("sim_v*.json")) if cache_dir.exists() else []
+        total_size = sum(f.stat().st_size for f in files)
+        return {
+            "success": True,
+            "cache_stats": {
+                "cached_variants": len(files),
+                "total_size_bytes": total_size,
+                "cache_dir": str(cache_dir),
+            },
+        }
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -238,10 +248,22 @@ async def clear_cache(variant_id: int = None):
         predictor = StockoutPredictor(
             db_engine=state.raw_engine, config={"use_cache": True}
         )
-        predictor.cache.invalidate(variant_id)
+        cache_dir = predictor.cache_dir
+        cleared = 0
+        if cache_dir.exists():
+            if variant_id is not None:
+                target = cache_dir / f"sim_v{variant_id}.json"
+                if target.exists():
+                    target.unlink()
+                    cleared = 1
+            else:
+                for f in cache_dir.glob("sim_v*.json"):
+                    f.unlink()
+                    cleared += 1
         return {
             "success": True,
-            "cleared": "all" if not variant_id else f"var_{variant_id}",
+            "cleared": "all" if variant_id is None else f"var_{variant_id}",
+            "files_removed": cleared,
             "message": "Cache cleared.",
         }
     except Exception as e:
@@ -256,9 +278,10 @@ async def cleanup_expired_cache():
         predictor = StockoutPredictor(
             db_engine=state.raw_engine, config={"use_cache": True}
         )
+        removed = predictor.prune_cache()
         return {
             "success": True,
-            "expired_entries_removed": predictor.cache.cleanup_expired(),
+            "expired_entries_removed": removed,
         }
     except Exception as e:
         return {"success": False, "error": str(e)}
