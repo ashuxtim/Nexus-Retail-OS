@@ -120,7 +120,7 @@ class ModelManager:
                 conn.execute(
                     text("""
                     UPDATE model_registry
-                    SET is_active = 1, promoted_at = :now
+                    SET is_active = 1, promoted_at = :now, evaluation_status = 'approved'
                     WHERE model_id = :model_id
                 """),
                     {"now": tz_now().isoformat(), "model_id": candidate_id},
