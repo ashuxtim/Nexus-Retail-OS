@@ -120,6 +120,11 @@ async def force_refresh_analytics():
                     else:
                         os.remove(item_path)
                 os.makedirs(ml_store_path, exist_ok=True)
+                os.makedirs(os.path.join(ml_store_path, "models"), exist_ok=True)
+                os.makedirs(os.path.join(ml_store_path, "churn"), exist_ok=True)
+                os.makedirs(os.path.join(ml_store_path, "stockout_simulations"), exist_ok=True)
+                os.makedirs(os.path.join(ml_store_path, "forecast"), exist_ok=True)
+                os.makedirs(os.path.join(ml_store_path, "market_basket"), exist_ok=True)
                 logger.info("🗑️ ml_store cleared for force refresh.")
         except Exception as e:
             logger.error(f"Failed to clear ml_store: {e}")
