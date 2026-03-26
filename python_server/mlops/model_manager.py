@@ -1,3 +1,4 @@
+import os
 import json
 from datetime import datetime
 from core.time_utils import now as tz_now
@@ -162,12 +163,23 @@ class ModelManager:
 
                 if not result:
                     return None
-
+                file_path = result[3]
+                if file_path and not os.path.exists(file_path):
+                    print(f"⚠️  Registry points to missing file: {file_path}. Deactivating stale row.")
+                    try:
+                        with self.engine.begin() as write_conn:
+                            write_conn.execute(
+                                text("UPDATE model_registry SET is_active = 0 WHERE model_id = :mid"),
+                                {"mid": result[0]},
+                            )
+                    except Exception as cleanup_err:
+                        print(f"⚠️  Failed to deactivate stale registry row: {cleanup_err}")
+                    return None
                 return {
                     "model_id": result[0],
                     "algorithm": result[1],
                     "model_version": result[2],
-                    "file_path": result[3],
+                    "file_path": file_path,
                     "trained_at": result[4],
                     "promoted_at": result[5],
                     "metrics": json.loads(result[6]) if result[6] else {},
