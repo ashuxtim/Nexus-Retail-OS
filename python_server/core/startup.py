@@ -216,18 +216,24 @@ def run_analytics_pipeline():
 
         def run_stockout():
             try:
-                stockout_raw = state.analytics_engine.stockout_ai.predict_stockouts(limit=20)
+                stockout_raw = state.analytics_engine.stockout_ai.predict_stockouts(
+                    limit=20
+                )
                 formatted_stockouts = []
                 for item in stockout_raw:
-                    formatted_stockouts.append({
-                        "name": item.get("product_name", f"Item {item['variant_id']}"),
-                        "variant_id": item["variant_id"],
-                        "stock": item["current_stock"],
-                        "days_left": item["metrics"]["days_until_stockout"],
-                        "status": item["risk_level"].title(),
-                        "metrics": item["metrics"],
-                        "recommendation": item["recommendation"],
-                    })
+                    formatted_stockouts.append(
+                        {
+                            "name": item.get(
+                                "product_name", f"Item {item['variant_id']}"
+                            ),
+                            "variant_id": item["variant_id"],
+                            "stock": item["current_stock"],
+                            "days_left": item["metrics"]["days_until_stockout"],
+                            "status": item["risk_level"].title(),
+                            "metrics": item["metrics"],
+                            "recommendation": item["recommendation"],
+                        }
+                    )
                 with state._cache_lock:
                     state.ANALYTICS_CACHE["data"]["stockouts"] = formatted_stockouts
                 logger.info("✅ Stockout model complete.")
@@ -245,23 +251,32 @@ def run_analytics_pipeline():
                 formatted_churn = []
                 if churn_raw:
                     for p in churn_raw:
-                        formatted_churn.append({
-                            "customer_id": p.get("customer_id"),
-                            "name": p.get("customer_name", "Unknown"),
-                            "risk_score": int(p.get("churn_score", 0) * 100),
-                            "days_inactive": p.get("features", {}).get("recency", 0),
-                            "velocity": p.get("features", {}).get("velocity", 0),
-                            "trend": p.get("risk_label", "Unknown"),
-                            "balance": p.get("balance", 0),
-                        })
+                        formatted_churn.append(
+                            {
+                                "customer_id": p.get("customer_id"),
+                                "name": p.get("customer_name", "Unknown"),
+                                "risk_score": int(p.get("churn_score", 0) * 100),
+                                "days_inactive": p.get("features", {}).get(
+                                    "recency", 0
+                                ),
+                                "velocity": p.get("features", {}).get("velocity", 0),
+                                "trend": p.get("risk_label", "Unknown"),
+                                "balance": p.get("balance", 0),
+                            }
+                        )
                 with state._cache_lock:
                     state.ANALYTICS_CACHE["data"]["churn_risk"] = formatted_churn[:50]
-                    state.ANALYTICS_CACHE["data"]["churn_risk_model_info"] = state.analytics_engine.churn_ai.get_model_info()
+                    state.ANALYTICS_CACHE["data"][
+                        "churn_risk_model_info"
+                    ] = state.analytics_engine.churn_ai.get_model_info()
                 logger.info("✅ Churn model complete.")
-                _save_snapshot_to_db("churn", {
-                    "churn_risk": formatted_churn[:50],
-                    "churn_risk_model_info": state.analytics_engine.churn_ai.get_model_info(),
-                })
+                _save_snapshot_to_db(
+                    "churn",
+                    {
+                        "churn_risk": formatted_churn[:50],
+                        "churn_risk_model_info": state.analytics_engine.churn_ai.get_model_info(),
+                    },
+                )
             except Exception as e:
                 logger.error(f"Churn model failed: {e}")
                 with state._cache_lock:
@@ -272,7 +287,11 @@ def run_analytics_pipeline():
             try:
                 forecast_data = state.analytics_engine.forecast_ai.get_cached_forecast()
                 if not forecast_data:
-                    forecast_data = state.analytics_engine.forecast_ai.generate_forecast(days_ahead=30)
+                    forecast_data = (
+                        state.analytics_engine.forecast_ai.generate_forecast(
+                            days_ahead=30
+                        )
+                    )
                 with state._cache_lock:
                     state.ANALYTICS_CACHE["data"]["forecast"] = forecast_data
                 logger.info("✅ Forecast model complete.")
@@ -288,24 +307,32 @@ def run_analytics_pipeline():
                 if basket_rules is None:
                     if state.analytics_engine._basket_lock.acquire(blocking=False):
                         try:
-                            basket_rules = state.analytics_engine.basket_ai.generate_rules()
+                            basket_rules = (
+                                state.analytics_engine.basket_ai.generate_rules()
+                            )
                         finally:
                             state.analytics_engine._basket_lock.release()
                     else:
                         basket_rules = []
                 basket_metadata = None
                 if basket_rules:
-                    basket_metadata = {"algorithm": "FP-Growth", "count": len(basket_rules)}
+                    basket_metadata = {
+                        "algorithm": "FP-Growth",
+                        "count": len(basket_rules),
+                    }
                 with state._cache_lock:
                     state.ANALYTICS_CACHE["data"]["market_basket"] = {
                         "rules": basket_rules or [],
                         "model_metadata": basket_metadata,
                     }
                 logger.info("✅ Market Basket model complete.")
-                _save_snapshot_to_db("market_basket", {
-                    "rules": basket_rules or [],
-                    "model_metadata": basket_metadata,
-                })
+                _save_snapshot_to_db(
+                    "market_basket",
+                    {
+                        "rules": basket_rules or [],
+                        "model_metadata": basket_metadata,
+                    },
+                )
             except Exception as e:
                 logger.error(f"Market Basket model failed: {e}")
                 with state._cache_lock:

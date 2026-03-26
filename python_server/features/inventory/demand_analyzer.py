@@ -89,11 +89,11 @@ class DemandAnalyzer:
         # Detect distribution type
         # Tight thresholds to avoid misclassifying high-volatility products as Poisson
         if mean_demand < 2 and cv > 0.8:
-            distribution = "poisson"   # True low-demand Poisson products
+            distribution = "poisson"  # True low-demand Poisson products
         elif cv < 0.5:
-            distribution = "normal"    # Stable, predictable demand
+            distribution = "normal"  # Stable, predictable demand
         else:
-            distribution = "empirical" # High-volatility: use raw simulation
+            distribution = "empirical"  # High-volatility: use raw simulation
 
         # Count zero-demand days
         zero_days = (daily_demand == 0).sum()
@@ -137,11 +137,11 @@ class DemandAnalyzer:
 
                 # Category-based lead time estimates (Indian retail supply chains)
                 if "frozen" in category or "dairy" in category:
-                    return (1, 3)   # Perishables: local supplier, 1-3 days
+                    return (1, 3)  # Perishables: local supplier, 1-3 days
                 elif "beverage" in category or "snack" in category:
-                    return (2, 5)   # Fast-moving FMCG: 2-5 days
+                    return (2, 5)  # Fast-moving FMCG: 2-5 days
                 elif "instant" in category or "bakery" in category:
-                    return (2, 4)   # Short shelf-life, frequent replenishment
+                    return (2, 4)  # Short shelf-life, frequent replenishment
                 elif "staple" in category or "confection" in category:
                     return (4, 10)  # Bulk staples: less frequent, longer cycles
                 elif "health" in category or "personal" in category:
@@ -149,9 +149,9 @@ class DemandAnalyzer:
                 elif "stationery" in category or "pet" in category:
                     return (5, 14)  # Slow-moving, ordered less frequently
                 elif "tobacco" in category:
-                    return (2, 5)   # Regulated but fast-moving in Indian retail
+                    return (2, 5)  # Regulated but fast-moving in Indian retail
                 else:
-                    return (3, 7)   # General fallback
+                    return (3, 7)  # General fallback
         except:
             pass
 

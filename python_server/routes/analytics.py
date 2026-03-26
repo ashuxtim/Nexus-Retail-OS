@@ -101,7 +101,9 @@ async def force_refresh_analytics():
             conn.execute("UPDATE model_registry SET is_active = 0")
             conn.commit()
             conn.close()
-            logger.info("🗑️ analytics_snapshot and model_registry cleared for force refresh.")
+            logger.info(
+                "🗑️ analytics_snapshot and model_registry cleared for force refresh."
+            )
         except Exception as e:
             logger.error(f"Failed to clear analytics_snapshot/model_registry: {e}")
 
@@ -122,7 +124,9 @@ async def force_refresh_analytics():
                 os.makedirs(ml_store_path, exist_ok=True)
                 os.makedirs(os.path.join(ml_store_path, "models"), exist_ok=True)
                 os.makedirs(os.path.join(ml_store_path, "churn"), exist_ok=True)
-                os.makedirs(os.path.join(ml_store_path, "stockout_simulations"), exist_ok=True)
+                os.makedirs(
+                    os.path.join(ml_store_path, "stockout_simulations"), exist_ok=True
+                )
                 os.makedirs(os.path.join(ml_store_path, "forecast"), exist_ok=True)
                 os.makedirs(os.path.join(ml_store_path, "market_basket"), exist_ok=True)
                 logger.info("🗑️ ml_store cleared for force refresh.")

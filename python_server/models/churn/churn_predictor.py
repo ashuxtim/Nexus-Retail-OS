@@ -20,6 +20,7 @@ _logger = logging.getLogger("NexusAI_Backend")
 _global_retrain_lock = threading.Lock()
 _global_retrain_in_progress = False
 
+
 class ChurnPredictor:
     """
     High-level orchestrator for churn prediction.
@@ -74,7 +75,6 @@ class ChurnPredictor:
         self.model_manager = ModelManager(engine)
         self.model_instance = None
         self.active_model = None
-
 
     # --- CACHING HELPERS (NEW) ---
     def _get_cache_path(self) -> str:
@@ -245,16 +245,22 @@ class ChurnPredictor:
                 champion_auc = current_champion.get("metrics", {}).get("auc_roc", 0)
                 if auc > champion_auc + 0.01:
                     self.model_manager.promote_model(model_id)
-                    print(f"   🏆 New champion! AUC {auc:.3f} beats old champion {champion_auc:.3f}")
+                    print(
+                        f"   🏆 New champion! AUC {auc:.3f} beats old champion {champion_auc:.3f}"
+                    )
                 else:
-                    print(f"   ⚠️  Challenger AUC {auc:.3f} did not beat champion {champion_auc:.3f} (+0.01 margin). Keeping current champion.")
+                    print(
+                        f"   ⚠️  Challenger AUC {auc:.3f} did not beat champion {champion_auc:.3f} (+0.01 margin). Keeping current champion."
+                    )
             else:
                 # No champion yet (first install) — promote if meets baseline threshold
                 if auc >= 0.85:
                     self.model_manager.promote_model(model_id)
                     print(f"   🚀 First model promoted to active (AUC: {auc:.3f})")
                 else:
-                    print(f"   ⚠️  Model trained but not promoted — AUC {auc:.3f} < 0.85 minimum threshold")
+                    print(
+                        f"   ⚠️  Model trained but not promoted — AUC {auc:.3f} < 0.85 minimum threshold"
+                    )
 
             self.load_active_model()
             self._cleanup_old_files()
