@@ -16,6 +16,8 @@ from models.churn.heuristic_model import HeuristicChurnModel
 
 _logger = logging.getLogger("NexusAI_Backend")
 
+_global_retrain_lock = threading.Lock()
+_global_retrain_in_progress = False
 
 class ChurnPredictor:
     """
@@ -72,9 +74,6 @@ class ChurnPredictor:
         self.model_instance = None
         self.active_model = None
 
-        # Guard against duplicate concurrent retrains
-        self._retrain_lock = threading.Lock()
-        self._retrain_in_progress = False
 
     # --- CACHING HELPERS (NEW) ---
     def _get_cache_path(self) -> str:
@@ -248,9 +247,10 @@ class ChurnPredictor:
             self.model_instance = None
 
             # Trigger background retrain (guarded against duplicates)
-            with self._retrain_lock:
-                if not self._retrain_in_progress:
-                    self._retrain_in_progress = True
+            global _global_retrain_in_progress
+            with _global_retrain_lock:
+                if not _global_retrain_in_progress:
+                    _global_retrain_in_progress = True
 
                     def _background_retrain():
                         try:
@@ -260,8 +260,9 @@ class ChurnPredictor:
                         except Exception as e:
                             _logger.error(f"Background churn retrain failed: {e}")
                         finally:
-                            with self._retrain_lock:
-                                self._retrain_in_progress = False
+                            with _global_retrain_lock:
+                                global _global_retrain_in_progress
+                                _global_retrain_in_progress = False
 
                     threading.Thread(target=_background_retrain, daemon=True).start()
 
