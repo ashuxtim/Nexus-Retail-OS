@@ -228,6 +228,7 @@ class StockoutPredictor:
             f"high-risk products: {len(results)}"
         )
 
+        self.prune_cache()
         return results[:limit]
 
     def predict_stockout(self, variant_id: int, current_stock: float) -> Dict:
