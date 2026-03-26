@@ -66,7 +66,7 @@ class ModelManager:
                         :model_id, :task_type, :algorithm, :version,
                         :trained_at, :trained_rows, :data_window_months,
                         :file_path, :metrics_json,
-                        0, 'pending', NULL
+                        :is_active, 'pending', NULL
                     )
                 """),
                     {
@@ -79,6 +79,7 @@ class ModelManager:
                         "data_window_months": data_window_months,
                         "file_path": file_path,
                         "metrics_json": json.dumps(metrics),
+                        "is_active": 1 if is_active else 0,
                     },
                 )
 
