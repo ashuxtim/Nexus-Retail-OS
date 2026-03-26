@@ -256,6 +256,7 @@ class ChurnPredictor:
                 else:
                     print(f"   ⚠️  Model trained but not promoted — AUC {auc:.3f} < 0.85 minimum threshold")
 
+            self.load_active_model()
             self._cleanup_old_files()
             return True
 
