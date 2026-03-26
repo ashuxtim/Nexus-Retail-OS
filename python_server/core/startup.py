@@ -404,6 +404,10 @@ def initialize_ai():
 
             # Auto-Warmup
             load_snapshots_from_db()
+            try:
+                ensure_churn_model_trained()
+            except Exception as e:
+                logger.error(f"Churn model check failed: {e}")
             threading.Thread(target=run_analytics_pipeline, daemon=True).start()
 
         except Exception as e:
@@ -426,11 +430,6 @@ def initialize_ai():
         else:
             logger.warning("No Groq API Key found.")
 
-        # 4. MLOps Checks
-        try:
-            ensure_churn_model_trained()
-        except Exception as e:
-            logger.error(f"Churn model check failed: {e}")
         try:
             asyncio.get_event_loop().run_in_executor(None, run_daily_model_validation)
         except Exception as e:
