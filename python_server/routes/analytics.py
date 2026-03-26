@@ -8,7 +8,7 @@ from fastapi import APIRouter
 
 from core import state
 from core.time_utils import now as tz_now
-from core.startup import run_analytics_pipeline
+from core.startup import run_analytics_pipeline, ensure_churn_model_trained
 from scripts.backend_logging import get_logger
 from models.stockout.predictor import StockoutPredictor
 from models.churn.churn_predictor import ChurnPredictor
@@ -127,7 +127,11 @@ async def force_refresh_analytics():
         # Step 4 — Start fresh pipeline in background thread
         import threading
 
-        threading.Thread(target=run_analytics_pipeline, daemon=True).start()
+        def _refresh_worker():
+            ensure_churn_model_trained()
+            run_analytics_pipeline()
+
+        threading.Thread(target=_refresh_worker, daemon=True).start()
         logger.info("🚀 Force refresh pipeline started in background.")
 
         return {
