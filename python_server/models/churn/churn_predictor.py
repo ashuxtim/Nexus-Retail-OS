@@ -214,6 +214,28 @@ class ChurnPredictor:
                 metrics=metrics,
                 trained_rows=len(X_train),
             )
+            try:
+                end_date = tz_now()
+                start_date = end_date.replace(year=end_date.year - 2)
+                with self.model_manager.engine.begin() as snap_conn:
+                    snap_conn.execute(
+                        text("""
+                            INSERT INTO dataset_snapshots
+                                (model_id, task_type, start_date, end_date, row_count)
+                            VALUES
+                                (:model_id, :task_type, :start_date, :end_date, :row_count)
+                        """),
+                        {
+                            "model_id": model_id,
+                            "task_type": "churn",
+                            "start_date": start_date.date().isoformat(),
+                            "end_date": end_date.date().isoformat(),
+                            "row_count": len(X_train),
+                        },
+                    )
+                print(f"📸 Dataset snapshot recorded for {model_id}")
+            except Exception as snap_err:
+                print(f"⚠️  Dataset snapshot failed (non-fatal): {snap_err}")
 
             # 6. Champion vs Challenger — only promote if better than current champion
             auc = metrics.get("auc_roc", 0)
