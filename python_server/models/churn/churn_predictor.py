@@ -1,5 +1,6 @@
 import os
 import sys
+import pathlib
 import json
 import logging
 import threading
@@ -113,6 +114,38 @@ class ChurnPredictor:
 
     # -----------------------------
 
+    def _cleanup_old_files(self, keep_pkl: int = 2, keep_json: int = 7) -> None:
+        """Delete old challenger .pkl files and stale daily JSON cache files."""
+        try:
+            # Clean up old .pkl files — keep only the most recent `keep_pkl`
+            model_dir = pathlib.Path(self.model_dir)
+            if model_dir.exists():
+                pkl_files = sorted(
+                    model_dir.glob("churn_xgboost_*.pkl"),
+                    key=lambda f: f.stat().st_mtime,
+                    reverse=True,
+                )
+                for old_file in pkl_files[keep_pkl:]:
+                    old_file.unlink()
+                    print(f"🗑️  Removed stale model file: {old_file.name}")
+        except Exception as e:
+            print(f"⚠️  .pkl cleanup failed: {e}")
+
+        try:
+            # Clean up old daily JSON cache files — keep only the most recent `keep_json`
+            cache_dir = pathlib.Path(self.cache_dir)
+            if cache_dir.exists():
+                json_files = sorted(
+                    cache_dir.glob("churn_risk_????-??-??.json"),
+                    key=lambda f: f.stat().st_mtime,
+                    reverse=True,
+                )
+                for old_file in json_files[keep_json:]:
+                    old_file.unlink()
+                    print(f"🗑️  Removed stale churn cache: {old_file.name}")
+        except Exception as e:
+            print(f"⚠️  JSON cleanup failed: {e}")
+
     def train_and_register(self):
         """
         Train new XGBoost model and register in MLOps system.
@@ -201,6 +234,7 @@ class ChurnPredictor:
                 else:
                     print(f"   ⚠️  Model trained but not promoted — AUC {auc:.3f} < 0.85 minimum threshold")
 
+            self._cleanup_old_files()
             return True
 
         except Exception as e:
