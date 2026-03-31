@@ -70,3 +70,13 @@ bugs_now.md
 current_session.md
 plan.md
 python_server/models/market_basket/fp-growth_while_shiiping.md
+
+Dockerfile.analytics
+docker-compose.yml
+LICENSE
+README.md
+playwright.config.js
+python_server/.dockerignore
+python_server/.flake8
+python_server/requirements-seed.txt
+python_server/scripts/Seeding/
