@@ -331,9 +331,10 @@ async def ask_agent(q: AskRequest):
 
     # ── 1. Pattern Router (zero LLM) ──
     fn_name, arg = route_query(user_text)
+    print(f"[DEBUG] route_query result: {fn_name}, {arg}")
     if fn_name:
         try:
-            result = _handle_python_query(fn_name, arg)
+            result = await asyncio.to_thread(_handle_python_query, fn_name, arg)
             if result:
                 return result
         except Exception as e:

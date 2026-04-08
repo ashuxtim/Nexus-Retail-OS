@@ -1,4 +1,5 @@
 import os
+import sys
 import shutil
 import threading
 import time
@@ -42,6 +43,9 @@ class SmartSearchEngine:
         # Threading lock for polling loop
         self._sync_lock = threading.Lock()
 
+        # Lazy-initialized DB engine (shared across sync calls)
+        self._db_engine = None
+
     def initialize(self):
         """Non-blocking startup"""
         if self.is_loading or self.is_ready:
@@ -52,9 +56,11 @@ class SmartSearchEngine:
         thread.start()
 
     def _get_db_engine(self):
-        return create_engine(
-            f"sqlite:///{self.db_path}", connect_args=sqlite_connect_args()
-        )
+        if self._db_engine is None:
+            self._db_engine = create_engine(
+                f"sqlite:///{self.db_path}", connect_args=sqlite_connect_args()
+            )
+        return self._db_engine
 
     def _heavy_load_process(self):
         try:
@@ -66,7 +72,13 @@ class SmartSearchEngine:
 
             # 1. Load embedding model
             print("   ⬇️ Loading embedding model...")
-            self.model = SentenceTransformer("all-MiniLM-L6-v2")
+            if hasattr(sys, "_MEIPASS"):
+                model_path = os.path.join(
+                    sys._MEIPASS, "sentence_transformers_models", "all-MiniLM-L6-v2"
+                )
+            else:
+                model_path = "all-MiniLM-L6-v2"
+            self.model = SentenceTransformer(model_path)
 
             # 2. Initialize ChromaDB persistent client
             self.client = chromadb.PersistentClient(

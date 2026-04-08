@@ -45,8 +45,9 @@ def build_nexus_agent(raw_engine, groq_key):
     )
     agent_llm = ChatGroq(
         groq_api_key=groq_key,
-        model_name="qwen/qwen3-32b",
+        model_name="llama-3.3-70b-versatile",
         temperature=0,
+        max_tokens=1024,
     )
 
     # 2. Custom SQL query tool for ad-hoc analytical questions

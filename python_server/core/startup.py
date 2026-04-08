@@ -117,7 +117,7 @@ def load_snapshots_from_db():
             logger.warning("DB path not found, skipping snapshot load.")
             return
 
-        conn = sqlite3.connect(db_path)
+        conn = sqlite3.connect(db_path, timeout=5)
         rows = conn.execute(
             "SELECT model_name, data FROM analytics_snapshot"
         ).fetchall()
@@ -172,7 +172,7 @@ def _save_snapshot_to_db(model_name: str, data):
         import sqlite3
 
         db_path = state.DB_PATH
-        conn = sqlite3.connect(db_path)
+        conn = sqlite3.connect(db_path, timeout=5)
         conn.execute(
             """
             INSERT INTO analytics_snapshot (model_name, data, saved_at)
@@ -388,7 +388,18 @@ def ensure_churn_model_trained():
                 if trained_at.tzinfo is None:
                     trained_at = trained_at.replace(tzinfo=tz_now().tzinfo)
                 if (tz_now() - trained_at).total_seconds() / 3600 < 24:
-                    needs_training = False
+                    # Also verify the pkl file actually exists on disk
+                    file_path_result = conn.execute(
+                        text(
+                            "SELECT file_path FROM model_registry "
+                            "WHERE task_type = 'churn' AND is_active = 1 "
+                            "ORDER BY trained_at DESC LIMIT 1"
+                        )
+                    ).fetchone()
+                    if file_path_result and os.path.exists(file_path_result[0]):
+                        needs_training = False
+                    else:
+                        logger.warning("⚠️ Active churn model file missing — scheduling retrain.")
 
             if needs_training:
                 predictor = ChurnPredictor(state.raw_engine, state.BASE_DIR)

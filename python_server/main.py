@@ -75,10 +75,10 @@ app.include_router(media_router)
 app.include_router(analytics_router)
 
 # --- Startup ---
-initialize_ai()
 
 if __name__ == "__main__":
     # This prevents Prophet/Torch from spawning infinite copies of the app.
     multiprocessing.freeze_support()
+    initialize_ai()
     port = int(os.environ.get("NEXUS_API_PORT", 8000))
     uvicorn.run(app, host="127.0.0.1", port=port, log_config=None, use_colors=False)

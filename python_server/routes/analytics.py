@@ -96,7 +96,7 @@ async def force_refresh_analytics():
 
         # Step 2 — Clear analytics_snapshot table and deactivate all model registry rows
         try:
-            conn = sqlite3.connect(state.DB_PATH)
+            conn = sqlite3.connect(state.DB_PATH, timeout=5)
             conn.execute("DELETE FROM analytics_snapshot")
             conn.execute("UPDATE model_registry SET is_active = 0")
             conn.commit()
