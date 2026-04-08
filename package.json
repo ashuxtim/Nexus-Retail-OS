@@ -122,8 +122,8 @@
         "to": "migrations"
       },
       {
-        "from": "python_server/dist/NexusBackend",
-        "to": "backend"
+        "from": "python_server/dist/nexus_backend",
+        "to": "nexus_backend"
       }
     ],
     "win": {

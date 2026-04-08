@@ -17,6 +17,12 @@ parentPort.on('message', (task) => {
       handleSupplierSearch(task.payload, task.id);
     } else if (task.type === 'SEARCH_VARIANTS') {
       handleVariantSearch(task.payload, task.id);
+    } else if (task.type === 'GET_DAYBOOK') {
+      handleDaybook(task.payload, task.id);
+    } else if (task.type === 'GET_DASHBOARD_STATS') {
+      handleDashboardStats(task.id);
+    } else if (task.type === 'GET_PRODUCTS') {
+      handleGetProducts(task.payload, task.id);
     } else if (task.type === 'RESET_CACHE') {
       internalCache = {};
     }
@@ -172,4 +178,118 @@ function handleVariantSearch({ query = "", limit = 50 }, reqId) {
   `).all(search, search, numericVal, isNumeric ? 1 : 0, numericVal, isNumeric ? 1 : 0, numericVal, isNumeric ? 1 : 0, `${query}%`, limit);
 
   parentPort.postMessage({ id: reqId, result: results });
+}
+
+function handleDaybook({ dateStr }, reqId) {
+  const selectedDate = dateStr || new Date().toISOString().split('T')[0];
+  const startOfDay = `${selectedDate} 00:00:00`;
+  const endOfDay = `${selectedDate} 23:59:59`;
+
+  const cashIn = db.prepare(
+    `SELECT SUM(amount) as total FROM payment WHERE payment_date BETWEEN ? AND ?`
+  ).get(startOfDay, endOfDay).total || 0;
+
+  const cashOut = db.prepare(
+    `SELECT SUM(total_amount) as total FROM purchase_invoice WHERE invoice_date BETWEEN ? AND ?`
+  ).get(startOfDay, endOfDay).total || 0;
+
+  const totalSales = db.prepare(
+    `SELECT SUM(i.quantity * i.price_at_sale) as total
+     FROM credit_sale_item i
+     JOIN credit_sale s ON i.sale_id = s.id
+     WHERE s.sale_date BETWEEN ? AND ?`
+  ).get(startOfDay, endOfDay).total || 0;
+
+  const items = db.prepare(
+    `SELECT (p.name || ' ' || v.name) as name,
+            SUM(i.quantity) as qty,
+            SUM(i.quantity * i.price_at_sale) as total
+     FROM credit_sale_item i
+     JOIN credit_sale s ON i.sale_id = s.id
+     JOIN product_variant v ON i.variant_id = v.id
+     JOIN product p ON v.product_id = p.id
+     WHERE s.sale_date BETWEEN ? AND ?
+     GROUP BY v.id ORDER BY total DESC`
+  ).all(startOfDay, endOfDay);
+
+  parentPort.postMessage({
+    id: reqId,
+    result: { date: selectedDate, cashIn, cashOut, totalSales, netCash: cashIn - cashOut, items }
+  });
+}
+
+function handleDashboardStats(reqId) {
+  const custStats = db.prepare(
+    `SELECT SUM(balance) as total_credit FROM customer WHERE balance > 0`
+  ).get();
+
+  const topDebtors = db.prepare(`
+    SELECT name, mobile, balance as outstanding_balance
+    FROM customer
+    WHERE balance > 0
+    ORDER BY balance DESC
+    LIMIT 50
+  `).all();
+
+  const prodCount = db.prepare(
+    `SELECT COUNT(*) as c FROM product_variant`
+  ).get().c;
+
+  const custCount = db.prepare(
+    `SELECT COUNT(*) as c FROM customer`
+  ).get().c;
+
+  const lowStock = db.prepare(`
+    SELECT p.name as product_name, v.name as variant_name,
+           v.current_stock as total_stock, p.category
+    FROM product_variant v
+    JOIN product p ON v.product_id = p.id
+    WHERE v.current_stock <= 10
+    ORDER BY v.current_stock ASC
+    LIMIT 50
+  `).all();
+
+  parentPort.postMessage({
+    id: reqId,
+    result: {
+      totaloutstandingcredit: custStats?.total_credit || 0,
+      totalproductvariants: prodCount || 0,
+      totalcustomers: custCount || 0,
+      low_stock_items: lowStock,
+      top_customers_by_credit: topDebtors
+    }
+  });
+}
+
+function handleGetProducts({ page = 1, limit = 100, search = "" }, reqId) {
+  const offset = (page - 1) * limit;
+  const searchTerm = `%${search}%`;
+  const startTerm = `${search}%`;
+
+  const products = db.prepare(`
+    SELECT DISTINCT p.* FROM product p
+    LEFT JOIN product_variant v ON p.id = v.product_id
+    WHERE p.name LIKE ? OR v.name LIKE ? OR p.category LIKE ?
+    ORDER BY
+      CASE WHEN p.name LIKE ? THEN 0 ELSE 1 END,
+      p.name ASC
+    LIMIT ? OFFSET ?
+  `).all(searchTerm, searchTerm, searchTerm, startTerm, limit, offset);
+
+  if (products.length === 0) {
+    return parentPort.postMessage({ id: reqId, result: [] });
+  }
+
+  const productIds = products.map(p => p.id);
+  const placeholders = productIds.map(() => '?').join(',');
+  const variants = db.prepare(
+    `SELECT * FROM product_variant WHERE product_id IN (${placeholders})`
+  ).all(...productIds);
+
+  const result = products.map(p => ({
+    ...p,
+    variants: variants.filter(v => v.product_id === p.id)
+  }));
+
+  parentPort.postMessage({ id: reqId, result });
 }

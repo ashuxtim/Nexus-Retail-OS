@@ -3,33 +3,37 @@
 
 import re
 
-# Filler words to strip from extracted search terms
-_FILLER_WORDS = {
-    "any",
-    "some",
-    "the",
-    "a",
-    "an",
-    "all",
-    "our",
-    "my",
-    "their",
-    "about",
-    "like",
-}
+# Strips leading question/command phrases before the noun
+_LEADING_RE = re.compile(
+    r"^(?:"
+    r"what(?:'s|\s+is|\s+are)?\s+(?:(?:the|a|an)\s+)?(?:stock\s+(?:of\s+)?|level\s+of\s+|supplier\s+(?:for|of)\s+)?"
+    r"|how\s+(?:much|many)\s+"
+    r"|do\s+(?:we|you)\s+have\s+"
+    r"|show\s+me\s+"
+    r"|search\s+for\s+"
+    r"|look\s+for\s+"
+    r"|find\s+(?:supplier\s+(?:for|of)\s+|product\s+(?:for|of)\s+)?"
+    r"|check\s+"
+    r"|any\s+"
+    r"|which\s+"
+    r"|stock\s+(?:level\s+)?(?:of|for)\s+"
+    r")",
+    re.IGNORECASE,
+)
+
+# Strips trailing stock/status words after the noun
+_TRAILING_RE = re.compile(
+    r"\s+(?:stock|level|status|available|left|remaining|in\s+stock|products?|items?)\s*$",
+    re.IGNORECASE,
+)
 
 
-def _clean_search_term(raw: str) -> str:
-    """Clean a raw regex-extracted search term into a usable query."""
-    # 1. Truncate at question mark (removes trailing questions)
-    term = raw.split("?")[0].strip()
-    # 2. Remove trailing "product(s)" / "item(s)" / "stock"
-    term = re.sub(
-        r"\s*(products?|items?|stock)\s*$", "", term, flags=re.IGNORECASE
-    ).strip()
-    # 3. Strip filler words
-    words = [w for w in term.split() if w.lower() not in _FILLER_WORDS]
-    return " ".join(words).strip()
+def _extract_search_noun(text: str) -> str | None:
+    """Extract the core search noun by stripping question words and trailing status words."""
+    term = text.strip().rstrip("?").strip()
+    term = _LEADING_RE.sub("", term).strip()
+    term = _TRAILING_RE.sub("", term).strip()
+    return term if len(term) >= 2 else None
 
 
 # ─────────────────────────────────────────
@@ -62,20 +66,6 @@ QUERY_PATTERNS = [
     (r"market\s*basket|buying\s*pattern|goes\s*with", "market_basket"),
 ]
 
-# Patterns that need a search term extracted
-# NOTE: Customer-specific patterns MUST come before generic search to prevent
-# "find customer X" from matching search_product.
-SEARCH_PATTERNS = [
-    (r"(?:search|find|look for)\s+customer\s+(.+)$", "search_customer"),
-    (r"(?:history|purchases?)\s+(?:of|for)\s+(.+)$", "customer_history"),
-    (r"(.+?)(?:'s)?\s+(?:purchase\s+history|orders|transactions)$", "customer_history"),
-    (
-        r"(?:search|find|look for)\s+(.+?)(?:\s+product)?$",
-        "search_product",
-    ),
-]
-
-
 def route_query(user_text: str):
     """
     Returns (function_name, arg) or (None, None) if LLM needed.
@@ -85,7 +75,7 @@ def route_query(user_text: str):
     """
     lower = user_text.lower().strip()
 
-    # 0. Skip router for complex/analytical queries → let LLM handle
+    # 0. Skip router for genuinely complex/analytical queries → let LLM handle
     COMPLEX_SIGNALS = [
         r"\bcompare\b",
         r"\bvs\b",
@@ -99,22 +89,11 @@ def route_query(user_text: str):
         r"\bhow\s+can\b",
         r"\bshould\s+i\b",
         r"\bwhy\b",
-        r"\bwhich\b",
         r"\bhelp\s+me\b",
         r"\bincrease\b",
         r"\breduce\b",
         r"\bimprove\b",
         r"\boptimize\b",
-        r"\are\s+any\b",
-        r"\bwhat\s+do\b",
-        r"\bdo we have\b",
-        r"\bwhat types\b",
-        r"\bhow many types\b",
-        r"\bshow me\b",
-        r"\bany\b",
-        r"\bwhat.*sell\b",
-        r"\bdo you have\b",
-        r"\bwhat.*carry\b",
     ]
     if any(re.search(sig, lower) for sig in COMPLEX_SIGNALS):
         return None, None
@@ -132,13 +111,10 @@ def route_query(user_text: str):
                 arg = None
             return fn_name, arg
 
-    # 2. Try search patterns (need term extraction)
-    for pattern, fn_name in SEARCH_PATTERNS:
-        match = re.search(pattern, lower)
-        if match:
-            search_term = _clean_search_term(match.group(1))
-            if len(search_term) >= 2:  # Ignore too-short terms
-                return fn_name, search_term
+    # 2. Noun extractor → SQL-first lookup, agent-fallback if SQL is empty
+    noun = _extract_search_noun(lower)
+    if noun:
+        return "sql_first_search", noun
 
     # 3. No match — LLM needed
     return None, None

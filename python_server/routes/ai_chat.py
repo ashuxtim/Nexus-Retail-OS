@@ -115,14 +115,14 @@ def _handle_python_query(fn_name, arg):
         rows = get_top_customers(engine, limit=limit)
         if not rows:
             return {"answer": "No sales data found yet."}
-        lines = "\n".join([f"{i+1}. {r[0]}: ₹{r[1]:,.2f}" for i, r in enumerate(rows)])
+        lines = "\n".join([f"{i+1}. **{r[0]}**: ₹{r[1]:,.2f}" for i, r in enumerate(rows)])
         return {"answer": f"🏆 **Top {limit} Customers by Sales:**\n\n{lines}"}
 
     elif fn_name == "today_sales":
         count, total = get_today_sales(engine)
         total = total or 0
         return {
-            "answer": f"📊 **Today's Sales:**\n\n• Transactions: {count}\n• Revenue: ₹{total:,.2f}"
+            "answer": f"📊 **Today's Sales:**\n\n- Transactions: {count}\n- Revenue: ₹{total:,.2f}"
         }
 
     elif fn_name == "monthly_revenue":
@@ -138,7 +138,7 @@ def _handle_python_query(fn_name, arg):
         if not rows:
             return {"answer": "No recent sales found."}
         lines = "\n".join(
-            [f"• {r[0]} → {r[1]} {r[2]} x{r[3]} @ ₹{r[4]} ({r[5]})" for r in rows]
+            [f"- {r[0]} → {r[1]} {r[2]} x{r[3]} @ ₹{r[4]} ({r[5]})" for r in rows]
         )
         return {"answer": f"🧾 **Recent Sales:**\n\n{lines}"}
 
@@ -148,7 +148,7 @@ def _handle_python_query(fn_name, arg):
         if not rows:
             return {"answer": "No sales data yet."}
         lines = "\n".join(
-            [f"{i+1}. {r[0]} - {r[1]}: {r[2]} units sold" for i, r in enumerate(rows)]
+            [f"{i+1}. **{r[0]}** - {r[1]}: {r[2]} units sold" for i, r in enumerate(rows)]
         )
         return {"answer": f"🛒 **Top {limit} Products:**\n\n{lines}"}
 
@@ -161,7 +161,7 @@ def _handle_python_query(fn_name, arg):
                 "answer": f"✅ No products below {threshold} units. Stock is healthy!"
             }
         lines = "\n".join(
-            [f"⚠️ {r[0]} - {r[1]}: **{r[2]} units** [{r[3]}]" for r in rows[:30]]
+            [f"- ⚠️ {r[0]} - {r[1]}: **{r[2]} units** [{r[3]}]" for r in rows[:30]]
         )
         return {"answer": f"⚠️ **Low Stock Alert ({len(rows)} items):**\n\n{lines}"}
 
@@ -169,7 +169,7 @@ def _handle_python_query(fn_name, arg):
         rows = get_out_of_stock(engine)
         if not rows:
             return {"answer": "✅ No products are out of stock!"}
-        lines = "\n".join([f"❌ {r[0]} - {r[1]} [{r[2]}]" for r in rows[:30]])
+        lines = "\n".join([f"- ❌ {r[0]} - {r[1]} [{r[2]}]" for r in rows[:30]])
         return {"answer": f"❌ **Out of Stock ({len(rows)} items):**\n\n{lines}"}
 
     elif fn_name == "all_products":
@@ -177,7 +177,7 @@ def _handle_python_query(fn_name, arg):
         if not rows:
             return {"answer": "No products found."}
         lines = "\n".join(
-            [f"• {r[0]} - {r[1]}: ₹{r[2]} | Stock: {r[3]}" for r in rows[:30]]
+            [f"- {r[0]} - {r[1]}: ₹{r[2]} | Stock: {r[3]}" for r in rows[:30]]
         )
         return {
             "answer": f"📦 **Products ({len(rows)} total, showing first 30):**\n\n{lines}"
@@ -187,7 +187,7 @@ def _handle_python_query(fn_name, arg):
         rows = search_product(engine, arg)
         if not rows:
             return None  # LLM fallback — let agent answer intelligently
-        lines = "\n".join([f"• {r[0]} - {r[1]}: ₹{r[2]} | Stock: {r[3]}" for r in rows])
+        lines = "\n".join([f"- {r[0]} - {r[1]}: ₹{r[2]} | Stock: {r[3]}" for r in rows])
         return {"answer": f"🔍 **Search results for '{arg}':**\n\n{lines}"}
 
     # ── Customers ──
@@ -195,7 +195,7 @@ def _handle_python_query(fn_name, arg):
         rows = get_all_customers(engine)
         if not rows:
             return {"answer": "No customers found."}
-        lines = "\n".join([f"• {r[0]} ({r[1]})" for r in rows[:30]])
+        lines = "\n".join([f"- {r[0]} ({r[1]})" for r in rows[:30]])
         return {
             "answer": f"👥 **Customers ({len(rows)} total, showing first 30):**\n\n{lines}"
         }
@@ -204,14 +204,14 @@ def _handle_python_query(fn_name, arg):
         rows = search_customer(engine, arg)
         if not rows:
             return None  # LLM fallback — let agent answer intelligently
-        lines = "\n".join([f"• {r[0]} | 📱 {r[1]} | {r[2]}" for r in rows])
+        lines = "\n".join([f"- {r[0]} | 📱 {r[1]} | {r[2]}" for r in rows])
         return {"answer": f"🔍 **Customer Search:**\n\n{lines}"}
 
     elif fn_name == "customer_history":
         rows = get_customer_purchase_history(engine, arg)
         if not rows:
             return {"answer": f"No purchase history for '{arg}'."}
-        lines = "\n".join([f"• {r[0]} {r[1]} x{r[2]} @ ₹{r[3]} ({r[4]})" for r in rows])
+        lines = "\n".join([f"- {r[0]} {r[1]} x{r[2]} @ ₹{r[3]} ({r[4]})" for r in rows])
         return {"answer": f"🧾 **Purchase History — {arg}:**\n\n{lines}"}
 
     # ── Suppliers ──
@@ -219,7 +219,7 @@ def _handle_python_query(fn_name, arg):
         rows = get_all_suppliers(engine)
         if not rows:
             return {"answer": "No suppliers found."}
-        lines = "\n".join([f"• {r[0]} ({r[1]})" for r in rows])
+        lines = "\n".join([f"- {r[0]} ({r[1]})" for r in rows])
         return {"answer": f"🏭 **Suppliers:**\n\n{lines}"}
 
     elif fn_name == "recent_purchases":
@@ -227,7 +227,7 @@ def _handle_python_query(fn_name, arg):
         if not rows:
             return {"answer": "No recent purchases."}
         lines = "\n".join(
-            [f"• {r[0]} → {r[1]} {r[2]} x{r[3]} @ ₹{r[4]} ({r[5]})" for r in rows]
+            [f"- {r[0]} → {r[1]} {r[2]} x{r[3]} @ ₹{r[4]} ({r[5]})" for r in rows]
         )
         return {"answer": f"📥 **Recent Purchases:**\n\n{lines}"}
 
@@ -297,12 +297,38 @@ def _handle_python_query(fn_name, arg):
         return {
             "answer": (
                 f"📊 **Quick Summary:**\n\n"
-                f"• Today's Sales: {s['today_sales_count']} transactions — ₹{s['today_revenue']:,.2f}\n"
-                f"• Low Stock Items: {s['low_stock_items']}\n"
-                f"• Total Customers: {s['total_customers']}\n"
-                f"• Total Products: {s['total_products']}"
+                f"- Today's Sales: {s['today_sales_count']} transactions — ₹{s['today_revenue']:,.2f}\n"
+                f"- Low Stock Items: {s['low_stock_items']}\n"
+                f"- Total Customers: {s['total_customers']}\n"
+                f"- Total Products: {s['total_products']}"
             )
         }
+
+    # ── SQL-first search (try SQL LIKE, fall through to agent if empty) ──
+    elif fn_name == "sql_first_search":
+        from ai_engine.queries import sql_quick_lookup
+
+        entity_type, rows = sql_quick_lookup(engine, arg)
+
+        if not rows:
+            return None  # Empty → fall through to agent → ChromaDB semantic search
+
+        if entity_type == "product":
+            lines = "\n".join(
+                [
+                    f"- {r['product']} - {r['variant']}: ₹{r['price']} | Stock: {r['current_stock']} [{r['category']}]"
+                    for r in rows
+                ]
+            )
+            return {"answer": f"🔍 **Results for '{arg}':**\n\n{lines}"}
+
+        elif entity_type == "customer":
+            lines = "\n".join([f"- {r['name']} | 📱 {r['mobile']}" for r in rows])
+            return {"answer": f"👤 **Customer results for '{arg}':**\n\n{lines}"}
+
+        elif entity_type == "supplier":
+            lines = "\n".join([f"- {r['name']} | 📱 {r['mobile']}" for r in rows])
+            return {"answer": f"🏭 **Supplier results for '{arg}':**\n\n{lines}"}
 
     return None  # Unknown fn → LLM fallback
 

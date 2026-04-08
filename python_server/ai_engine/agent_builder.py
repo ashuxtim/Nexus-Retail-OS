@@ -45,7 +45,7 @@ def build_nexus_agent(raw_engine, groq_key):
     )
     agent_llm = ChatGroq(
         groq_api_key=groq_key,
-        model_name="llama-3.3-70b-versatile",
+        model_name="qwen/qwen3-32b",
         temperature=0,
         max_tokens=1024,
     )

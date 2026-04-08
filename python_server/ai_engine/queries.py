@@ -263,6 +263,60 @@ def get_recent_purchases(engine, limit=30):
 # ─────────────────────────────────────────
 
 
+def sql_quick_lookup(engine, term: str):
+    """
+    Tries to find products, customers, or suppliers matching term via SQL LIKE.
+    Returns (entity_type, list_of_dicts) or (None, []) if nothing found.
+    Checks products first, then customers, then suppliers.
+    """
+    term_like = f"%{term}%"
+    with engine.connect() as c:
+        # Products
+        rows = c.execute(
+            text("""
+            SELECT p.name as product, pv.name as variant,
+                   pv.price, pv.current_stock, p.category
+            FROM product_variant pv
+            JOIN product p ON pv.product_id = p.id
+            WHERE LOWER(p.name) LIKE LOWER(:t)
+               OR LOWER(pv.name) LIKE LOWER(:t)
+            ORDER BY p.name ASC
+            LIMIT 20
+        """),
+            {"t": term_like},
+        ).fetchall()
+        if rows:
+            return ("product", [dict(r._mapping) for r in rows])
+
+        # Customers
+        rows = c.execute(
+            text("""
+            SELECT name, mobile, address
+            FROM customer
+            WHERE LOWER(name) LIKE LOWER(:t)
+            LIMIT 10
+        """),
+            {"t": term_like},
+        ).fetchall()
+        if rows:
+            return ("customer", [dict(r._mapping) for r in rows])
+
+        # Suppliers
+        rows = c.execute(
+            text("""
+            SELECT name, mobile
+            FROM supplier
+            WHERE LOWER(name) LIKE LOWER(:t)
+            LIMIT 10
+        """),
+            {"t": term_like},
+        ).fetchall()
+        if rows:
+            return ("supplier", [dict(r._mapping) for r in rows])
+
+    return (None, [])
+
+
 def get_quick_summary(engine):
     """Single call to get key dashboard numbers."""
     with engine.connect() as c:

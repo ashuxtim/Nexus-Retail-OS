@@ -94,6 +94,7 @@ function initEncryptionKey() {
 // --- Global State ---
 let mainWindow;
 let backendProcess = null;
+let isQuitting = false;
 
 // ==========================================
 // API KEY INJECTION (Security: Memory-Only)
@@ -187,27 +188,27 @@ function startBackend() {
 
   // --- PROD MODE: Spawn the packaged EXE ---
   // ⚡ FIX 1: Point to 'backend' folder defined in package.json
-  const executable = path.join(process.resourcesPath, 'backend', 'NexusBackend.exe');
+  const backendExe = path.join(process.resourcesPath, 'nexus_backend', 'nexus_backend.exe');
   const userDataPath = app.getPath('userData');
 
   // Check if file exists to prevent immediate crash on spawn
-  if (!fs.existsSync(executable)) {
-    console.error("❌ CRITICAL: Backend binary not found at", executable);
+  if (!fs.existsSync(backendExe)) {
+    console.error("❌ CRITICAL: Backend binary not found at", backendExe);
     dialog.showErrorBox("Startup Error", "The analytics engine is missing. Please reinstall the app.");
     return;
   }
 
-  console.log("🚀 PROD MODE: Spawning Backend Binary from:", executable);
+  console.log("🚀 PROD MODE: Spawning Backend Binary from:", backendExe);
 
   try {
     // --- SPAWN PROCESS WITH IPC BRIDGE ---
-    backendProcess = spawn(executable, [], {
+    backendProcess = spawn(backendExe, [], {
       stdio: ['ignore', 'pipe', 'pipe'], // 'pipe' enables listening to stdout
       windowsHide: true,
 
       // ⚡ FIX 2: Set Working Directory (CWD) to the EXE folder
       // This ensures XGBoost and Prophet can find their internal files
-      cwd: path.dirname(executable),
+      cwd: path.dirname(backendExe),
 
       env: {
         ...process.env,
@@ -233,12 +234,6 @@ function startBackend() {
     // ✅ NEW: Inject API keys after Python spawns
     backendProcess.on('spawn', () => {
       console.log('🐍 Python process spawned successfully');
-      // Wait 2 seconds for Python to fully initialize, then inject keys
-      setTimeout(() => {
-        injectKeysIntoPython().catch(err => {
-          console.error('❌ Key injection failed:', err);
-        });
-      }, 2000);
     });
 
 
@@ -254,28 +249,65 @@ function startBackend() {
 }
 
 
-function killBackend() {
-  if (!backendProcess) return;
+async function waitForBackend() {
+  const MAX_WAIT_MS = 180000;
+  const POLL_INTERVAL_MS = 500;
+  const startTime = Date.now();
+  console.log('⏳ Polling backend health...');
 
-  // 1. Try Graceful Shutdown first
-  backendProcess.kill('SIGTERM');
-
-  // 2. Force kill if it doesn't close within 3 seconds
-  setTimeout(() => {
-    if (backendProcess) {
-      console.log("Backend did not exit gracefully. Force killing...");
-      try {
-        if (process.platform === 'win32') {
-          execSync(`taskkill /pid ${backendProcess.pid} /T /F`);
-        } else {
-          backendProcess.kill('SIGKILL');
+  while (Date.now() - startTime < MAX_WAIT_MS) {
+    try {
+      const res = await fetch(`${config.backendUrl}/health`, {
+        signal: AbortSignal.timeout(500)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status === 'Active') {
+          console.log('✅ Backend healthy');
+          setTimeout(() => {
+            injectKeysIntoPython().catch(err => console.error('❌ Key injection failed:', err));
+          }, 2000);
+          return;
         }
-      } catch (e) {
-        // Ignore errors if it's already dead
       }
-      backendProcess = null;
-    }
-  }, 3000);
+    } catch { /* not up yet */ }
+
+    await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+  }
+
+  console.error('❌ Backend failed to start within 60 seconds');
+  dialog.showErrorBox(
+    'Startup Error',
+    'The analytics engine failed to start within 3 minutes. Please restart the app.'
+  );
+  app.exit(1);
+}
+
+async function killBackendAsync() {
+  if (!backendProcess) return;
+  const proc = backendProcess;
+  const pid = proc.pid;
+
+  try { proc.kill('SIGTERM'); } catch {}
+  console.log(`🛑 SIGTERM sent (PID: ${pid})`);
+
+  const cleanExit = await new Promise(resolve => {
+    if (!backendProcess) return resolve(true);
+    const timer = setTimeout(() => resolve(false), 5000);
+    proc.once('exit', () => { clearTimeout(timer); resolve(true); });
+  });
+
+  if (cleanExit) {
+    console.log('✅ Backend exited cleanly');
+    return;
+  }
+
+  console.warn(`⚠️ Force killing backend (PID: ${pid})`);
+  try { proc.kill(); } catch {}
+  if (process.platform === 'win32' && pid) {
+    try { execSync(`taskkill /PID ${pid} /T /F`, { stdio: 'ignore' }); } catch {}
+  }
+  backendProcess = null;
 }
 
 function createWindow() {
@@ -372,6 +404,10 @@ app.whenReady().then(async () => {
           setupAutoUpdater();
         }, 3000);
       }
+
+      if (!config.isDev) {
+        waitForBackend();
+      }
     } else {
       // If runMigrations returned false (e.g. folder missing)
       throw new Error("Migration system check failed (Files missing).");
@@ -392,10 +428,17 @@ app.whenReady().then(async () => {
   });
 });
 
-app.on('will-quit', killBackend);
+app.on('before-quit', async (e) => {
+  if (isQuitting) return;
+  e.preventDefault();
+  isQuitting = true;
+  console.log('🔄 App quitting — shutting down backend...');
+  await killBackendAsync();
+  app.exit(0);
+});
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  app.quit();
 });
 
 // ==========================================
@@ -602,36 +645,31 @@ ipcMain.handle('dashboard:get-stats', () => {
   try {
     const custStats = CustomerRepo.getStats()
     const db = getDB()
-
     const prodCount = db.prepare(`SELECT COUNT(*) as c FROM product_variant`).get().c
     const custCount = db.prepare(`SELECT COUNT(*) as c FROM customer`).get().c
-
     const lowStock = db.prepare(`
-      SELECT 
+      SELECT
         p.name as product_name,
         v.name as variant_name,
         v.current_stock as total_stock,
         p.category
-      FROM product_variant v 
-      JOIN product p ON v.product_id = p.id 
+      FROM product_variant v
+      JOIN product p ON v.product_id = p.id
       WHERE v.current_stock <= 10
       ORDER BY v.current_stock ASC
       LIMIT 50
     `).all()
-
-    // ✅ FIX: Map field names to match frontend expectations (with underscores)
     const debtors = custStats.topDebtors.map(debtor => ({
       name: debtor.name,
       mobile: debtor.mobile,
-      outstanding_balance: debtor.outstandingbalance  // ✅ Add underscore
+      outstanding_balance: debtor.outstandingbalance
     }))
-
     return {
       totaloutstandingcredit: custStats.credit || 0,
       totalproductvariants: prodCount || 0,
       totalcustomers: custCount || 0,
-      low_stock_items: lowStock,           // ✅ Changed to use underscores
-      top_customers_by_credit: debtors     // ✅ Changed to use underscores
+      low_stock_items: lowStock,
+      top_customers_by_credit: debtors
     }
   } catch (err) {
     console.error('Dashboard Stats Error:', err)
@@ -1011,8 +1049,10 @@ ipcMain.handle('sale:create-full', async (e, data) => {
 });
 
 ipcMain.handle('sale:get-daybook', async (e, { date }) => {
-  try { return { success: true, data: SaleRepo.getDaybookData(date) }; }
-  catch (err) { return { success: false, error: err.message }; }
+  try {
+    const data = await WorkerHandler.getDaybook(date);
+    return { success: true, data };
+  } catch (err) { return { success: false, error: err.message }; }
 });
 
 // ==========================================

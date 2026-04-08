@@ -23,7 +23,22 @@ function initWorker() {
 
     worker.on('error', (err) => {
       console.error("Worker Error:", err);
-      // On error, invalidate so next call reinits
+      // Reject all pending promises so callers don't hang forever
+      for (const [id, { reject }] of pendingRequests.entries()) {
+        reject(new Error(`Worker crashed: ${err.message}`));
+      }
+      pendingRequests.clear();
+      worker = null;
+    });
+
+    worker.on('exit', (code) => {
+      if (code !== 0) {
+        console.error(`Worker exited with code ${code}`);
+        for (const [id, { reject }] of pendingRequests.entries()) {
+          reject(new Error(`Worker exited unexpectedly (code ${code})`));
+        }
+        pendingRequests.clear();
+      }
       worker = null;
     });
   } catch (err) {
@@ -65,5 +80,8 @@ module.exports = {
   searchSuppliers: (search, limit) => runInWorker('SEARCH_SUPPLIERS', { search, limit }),
   searchVariants: (query, limit) => runInWorker('SEARCH_VARIANTS', { query, limit }),
   exportLedgerData: (start, end) => runInWorker('EXPORT_LEDGER', { start, end }),
+  getDaybook: (dateStr) => runInWorker('GET_DAYBOOK', { dateStr }),
+  getDashboardStats: () => runInWorker('GET_DASHBOARD_STATS', {}),
+  getProducts: (params) => runInWorker('GET_PRODUCTS', params || {}),
   invalidateSupplierCache: invalidateSupplierCache
 };
